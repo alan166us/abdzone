@@ -1,0 +1,8 @@
+{
+  "name": "StrataZone - Supply & Demand Zone Trading Assist",
+  "description": "Institutional-grade candlestick analysis platform that automatically detects Supply and Demand zones, calculates historical volatility metrics, and recommends precision entry, stop-loss, and take-profit levels.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
