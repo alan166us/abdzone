@@ -538,6 +538,46 @@ export const SchwabConnectModal: React.FC<SchwabConnectModalProps> = ({
                 </div>
               )}
 
+              {/* SCHWAB SANDBOX & DEVELOPER PORTAL SETUP GUIDE */}
+              <div className="p-4 rounded-lg bg-sky-950/30 border border-sky-800/50 space-y-2.5">
+                <div className="font-bold text-sky-300 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-1.5 font-mono">
+                    <ShieldCheck className="w-4 h-4 text-sky-400" />
+                    <span>How to Connect with Charles Schwab Developer Sandbox</span>
+                  </div>
+                  <a
+                    href="https://developer.schwab.com"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] text-sky-400 hover:text-white underline flex items-center gap-1"
+                  >
+                    developer.schwab.com
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+
+                <ol className="list-decimal list-inside space-y-1.5 text-[11px] text-slate-300 leading-relaxed font-sans pl-1">
+                  <li>
+                    Log in to <strong className="text-white">developer.schwab.com</strong> with your Charles Schwab brokerage credentials.
+                  </li>
+                  <li>
+                    Go to <strong className="text-white">Dashboard &rarr; Apps</strong> and click <strong className="text-sky-300 font-semibold">+ Create New App</strong>.
+                  </li>
+                  <li>
+                    In the app creation form, enable <strong className="text-emerald-300">Trader API - Market Data</strong> (and <em className="text-slate-300">Trader API - Accounts &amp; Trading</em> for order simulation).
+                  </li>
+                  <li>
+                    In the <strong className="text-white">Callback URL</strong> field, enter: <code className="bg-slate-900 px-1 py-0.5 rounded text-amber-300 font-mono">https://127.0.0.1</code>
+                  </li>
+                  <li>
+                    Once approved (new apps status will show <em className="text-emerald-400">Ready For Use</em>), copy your <strong className="text-white">App Key</strong> and <strong className="text-white">Secret</strong> into Method B below.
+                  </li>
+                  <li>
+                    Click <strong className="text-sky-300">1. Authorize on Schwab Portal</strong>, approve access, then copy the redirected browser URL (<code className="text-slate-400 text-[10px]">https://127.0.0.1/?code=...</code>) into step 2 below and click <strong className="text-emerald-400">Authenticate</strong>!
+                  </li>
+                </ol>
+              </div>
+
               {/* METHOD 1: Quick Paste Bearer Token */}
               <div className="p-4 rounded-lg bg-slate-900/60 border border-slate-800 space-y-2.5">
                 <div className="font-bold text-white flex items-center gap-2">

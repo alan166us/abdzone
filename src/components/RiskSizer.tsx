@@ -29,15 +29,16 @@ export const RiskSizer: React.FC<RiskSizerProps> = ({
 
   const entry = customEntry || 1;
   const stopLoss = customStopLoss || 1;
-  const sizing = calculatePositionSize(accountEquity, riskPercent, entry, stopLoss);
+  const sizing = calculatePositionSize(accountEquity, riskPercent, entry, stopLoss, symbol);
 
   const tp1 = entry + (entry - stopLoss) * 2;
   const tp2 = entry + (entry - stopLoss) * 3;
   const tp3 = entry + (entry - stopLoss) * 4.5;
 
-  const dollarGainTp1 = sizing.units * Math.abs(tp1 - entry);
-  const dollarGainTp2 = sizing.units * Math.abs(tp2 - entry);
-  const dollarGainTp3 = sizing.units * Math.abs(tp3 - entry);
+  const multiplier = sizing.isFutures ? (sizing.contracts * sizing.pointValue) : sizing.units;
+  const dollarGainTp1 = multiplier * Math.abs(tp1 - entry);
+  const dollarGainTp2 = multiplier * Math.abs(tp2 - entry);
+  const dollarGainTp3 = multiplier * Math.abs(tp3 - entry);
 
   const riskPerUnit = Math.abs(entry - stopLoss);
   const riskPctOfPrice = (riskPerUnit / entry) * 100;
@@ -140,8 +141,12 @@ export const RiskSizer: React.FC<RiskSizerProps> = ({
                 <span className="text-rose-400 font-bold text-sm">${sizing.riskAmount.toFixed(2)}</span>
               </div>
               <div>
-                <span className="text-slate-500 block text-[10px]">POSITION SIZE (UNITS)</span>
-                <span className="text-white font-bold text-sm">{sizing.units.toFixed(4)}</span>
+                <span className="text-slate-500 block text-[10px]">
+                  {sizing.isFutures ? 'POSITION SIZE (CONTRACTS)' : 'POSITION SIZE (SHARES/UNITS)'}
+                </span>
+                <span className="text-white font-bold text-sm">
+                  {sizing.isFutures ? `${sizing.contracts} cts ($${sizing.pointValue}/pt)` : sizing.units.toFixed(2)}
+                </span>
               </div>
               <div>
                 <span className="text-slate-500 block text-[10px]">TOTAL NOTIONAL VALUE</span>

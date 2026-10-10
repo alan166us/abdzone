@@ -7,7 +7,8 @@ export interface ZoneDetectorOptions {
   maxBaseCandles?: number;        // Max consolidation candles in base (default 4)
   useWickForBoundary?: boolean;   // True to use full wicks (default true for precise chart alignment)
   recentOnly?: boolean;           // Keep only the recent demand and supply zones (default true)
-  maxRecentZonesPerType?: number; // Max recent unmitigated zones to retain per type (default 2)
+  maxRecentZonesPerType?: number; // Max recent unmitigated zones to retain per type (default 1)
+  includeMitigated?: boolean;     // Whether to include broken/mitigated zones in recent mode (default false)
 }
 
 /**
@@ -51,7 +52,8 @@ export function detectSupplyDemandZones(
     maxBaseCandles = 4,
     useWickForBoundary = true, // Default to true so zone boxes cleanly wrap candle wicks
     recentOnly = true, // Default to true: keep only recent demand and supply zones
-    maxRecentZonesPerType = 2, // Keep the top 2 most recent active zones per side
+    maxRecentZonesPerType = 1, // Default to 1: keep strictly 1 recent demand and 1 recent supply zone
+    includeMitigated = false, // Keep false by default to prevent chart clutter
   } = options;
 
   if (candles.length < 20) return [];
@@ -159,18 +161,20 @@ export function detectSupplyDemandZones(
       type = 'demand';
       pattern = wasDroppingBeforeBase ? 'DBR' : 'RBR';
 
-      // Upper boundary (Proximal Line / Entry): Top wick (or body) of the base
-      zoneHigh = useWickForBoundary ? Math.max(...baseHighs) : Math.max(...baseUpperBodies);
-      // Lower boundary (Distal Line / Invalidation Stop): Absolute lowest wick of the base
+      // Demand Zones:
+      // Proximal Boundary (Entry Line): Highest candle body of consolidation base
+      zoneHigh = Math.max(...baseUpperBodies);
+      // Distal Line (Invalidation Stop): Lowest wick of consolidation base
       zoneLow = Math.min(...baseLows);
     } else if (isBearishImpulse) {
       type = 'supply';
       pattern = wasRallyingBeforeBase ? 'RBD' : 'DBD';
 
-      // Upper boundary (Distal Line / Invalidation Stop): Absolute highest wick of the base
+      // Supply Zones:
+      // Distal Line (Invalidation Stop): Highest wick of consolidation base
       zoneHigh = Math.max(...baseHighs);
-      // Lower boundary (Proximal Line / Entry): Bottom wick (or body) of the base
-      zoneLow = useWickForBoundary ? Math.min(...baseLows) : Math.min(...baseLowerBodies);
+      // Proximal Boundary (Entry Line): Lowest candle body of consolidation base
+      zoneLow = Math.min(...baseLowerBodies);
     } else {
       continue;
     }
@@ -197,52 +201,40 @@ export function detectSupplyDemandZones(
       const futureCandle = candles[j];
 
       if (type === 'demand') {
-        // Did price pierce into the demand zone?
-        const isTouching = futureCandle.low <= zoneHigh && futureCandle.low >= zoneLow;
+        // Did price pierce into the demand zone (between proximal and distal lines)?
+        const isTouching = futureCandle.low <= zoneHigh && futureCandle.high >= zoneLow;
         if (isTouching) {
           if (!inRetestMode) {
             testedCount++;
-            inRetestMode = true; // Mark active visit so multi-bar bounces count as 1 retest
-          }
-          // After 2 retests, limit orders are absorbed. A 3rd test exhausts the zone -> mitigated
-          if (testedCount >= 3) {
-            isMitigated = true;
-            mitigatedIndex = j;
-            mitigatedTime = futureCandle.time;
-            break;
+            inRetestMode = true; // Consolidate contiguous bars of the same test visit
           }
         } else if (futureCandle.low > zoneHigh) {
-          inRetestMode = false; // Left zone, ready for next visit
+          inRetestMode = false; // Bounced out above proximal line
         }
 
-        // Mitigation check: Did price close below zone low, or wick below distal line?
-        if (futureCandle.close < zoneLow || futureCandle.low <= zoneLow) {
+        // Strict Mitigation: A zone must ONLY be marked isMitigated = true when a subsequent
+        // candle body closes past the distal boundary (invalidating the order block).
+        if (futureCandle.close < zoneLow) {
           isMitigated = true;
           mitigatedIndex = j;
           mitigatedTime = futureCandle.time;
           break;
         }
       } else {
-        // Supply Zone
-        const isTouching = futureCandle.high >= zoneLow && futureCandle.high <= zoneHigh;
+        // Supply Zone: Did price pierce into the supply zone (between proximal and distal lines)?
+        const isTouching = futureCandle.high >= zoneLow && futureCandle.low <= zoneHigh;
         if (isTouching) {
           if (!inRetestMode) {
             testedCount++;
-            inRetestMode = true;
-          }
-          // After 2 retests, limit orders are absorbed. A 3rd test exhausts the zone -> mitigated
-          if (testedCount >= 3) {
-            isMitigated = true;
-            mitigatedIndex = j;
-            mitigatedTime = futureCandle.time;
-            break;
+            inRetestMode = true; // Consolidate contiguous bars of the same test visit
           }
         } else if (futureCandle.high < zoneLow) {
-          inRetestMode = false;
+          inRetestMode = false; // Bounced out below proximal line
         }
 
-        // Mitigation check: Did price close above zone high, or wick above distal line?
-        if (futureCandle.close > zoneHigh || futureCandle.high >= zoneHigh) {
+        // Strict Mitigation: A zone must ONLY be marked isMitigated = true when a subsequent
+        // candle body closes past the distal boundary (invalidating the order block).
+        if (futureCandle.close > zoneHigh) {
           isMitigated = true;
           mitigatedIndex = j;
           mitigatedTime = futureCandle.time;
@@ -343,6 +335,42 @@ export function detectSupplyDemandZones(
       score >= 50 ? 56 : 42;
 
     const equilibrium = Number(((zoneHigh + zoneLow) / 2).toFixed(2));
+    const proximalLine = type === 'demand' ? Number(zoneHigh.toFixed(2)) : Number(zoneLow.toFixed(2));
+    const distalLine = type === 'demand' ? Number(zoneLow.toFixed(2)) : Number(zoneHigh.toFixed(2));
+    const barAge = (candles.length - 1) - baseStartIdx;
+    const isDepleted = testedCount >= 2;
+
+    // Dynamic Lookback & Depletion: Automatically discount or de-prioritize zones that have
+    // accumulated >= 2 prior test touches or have traversed more than 300 bars without a test.
+    if (barAge >= 300 && testedCount === 0) {
+      score = Math.round(score * 0.5);
+      confluenceTags.push('Age Decay (>300 bars untested)');
+    } else if (barAge >= 300) {
+      score = Math.round(score * 0.6);
+      confluenceTags.push('Age Decay (>300 bars)');
+    }
+
+    if (isDepleted) {
+      confluenceTags.push('Depleted (Liquidity Exhausted)');
+    }
+
+    // Execution Reaction Window & Proximity Phase
+    const lastCandle = candles[candles.length - 1];
+    const currentClose = lastCandle?.close || proximalLine;
+    const latestAtr = atrs[candles.length - 1] || atr;
+    const distanceToProximal = Math.abs(currentClose - proximalLine);
+    const distanceInAtr = Number((distanceToProximal / Math.max(0.0001, latestAtr)).toFixed(2));
+
+    let proximityPhase: import('../types/trading').ProximityPhase = 'Dormant (>1.5x ATR)';
+    const isInsideZone = currentClose >= zoneLow && currentClose <= zoneHigh;
+    if (isInsideZone) {
+      proximityPhase = 'Phase B: Zone Touch (Execute)';
+    } else if (distanceInAtr <= 0.8) {
+      proximityPhase = 'Phase B: Zone Touch (Execute)';
+    } else if (distanceInAtr <= 1.5) {
+      proximityPhase = 'Phase A: Staging (1.0–1.5x ATR)';
+    }
+
     const volLabel = validVolCount >= 5 ? `, Vol: ${volumeImbalanceRatio.toFixed(1)}x` : '';
 
     const zone: SupplyDemandZone = {
@@ -352,6 +380,8 @@ export function detectSupplyDemandZones(
       high: Number(zoneHigh.toFixed(2)),
       low: Number(zoneLow.toFixed(2)),
       equilibrium,
+      proximalLine,
+      distalLine,
       conservativeEntry: equilibrium, // 50% retracement entry for 4:1+ R:R
       startIndex: baseStartIdx,
       endIndex: i,
@@ -360,6 +390,7 @@ export function detectSupplyDemandZones(
       departurePercent: Number(departurePercent.toFixed(2)),
       strengthScore: score,
       testedCount,
+      isDepleted,
       isMitigated,
       mitigatedIndex,
       mitigatedTime,
@@ -369,6 +400,9 @@ export function detectSupplyDemandZones(
       trendConfluence,
       confluenceTags,
       winProbabilityEstimate,
+      barAge,
+      distanceInAtr,
+      proximityPhase,
       notes: `${pattern} (${type === 'demand' ? 'Demand' : 'Supply'}) Base: ${baseLength}c, Departure: ${departureVelocity.toFixed(1)}x ATR${volLabel}`,
     };
 
@@ -397,7 +431,22 @@ export function detectSupplyDemandZones(
     }
   }
 
-  // If recentOnly is true (default), retain strictly the most recent unmitigated zones per type
+  // Mark the primary most recent active demand and supply zones
+  let primaryDemandMarked = false;
+  let primarySupplyMarked = false;
+  for (const z of deduplicatedZones) {
+    if (!z.isMitigated) {
+      if (z.type === 'demand' && !primaryDemandMarked) {
+        z.isRecentPrimary = true;
+        primaryDemandMarked = true;
+      } else if (z.type === 'supply' && !primarySupplyMarked) {
+        z.isRecentPrimary = true;
+        primarySupplyMarked = true;
+      }
+    }
+  }
+
+  // If recentOnly is true (default), retain strictly the single most recent unmitigated zone per type
   if (recentOnly) {
     const recentDemand = deduplicatedZones
       .filter(z => z.type === 'demand' && !z.isMitigated)
@@ -407,12 +456,17 @@ export function detectSupplyDemandZones(
       .filter(z => z.type === 'supply' && !z.isMitigated)
       .slice(0, maxRecentZonesPerType);
 
-    // Keep at most 1 most recent mitigated zone for optional user inspection
-    const recentMitigated = deduplicatedZones
-      .filter(z => z.isMitigated)
-      .slice(0, 1);
+    const result = [...recentDemand, ...recentSupply];
 
-    return [...recentDemand, ...recentSupply, ...recentMitigated].sort((a, b) => b.startIndex - a.startIndex);
+    // Only include mitigated if explicitly requested
+    if (includeMitigated) {
+      const recentMitigated = deduplicatedZones
+        .filter(z => z.isMitigated)
+        .slice(0, 1);
+      result.push(...recentMitigated);
+    }
+
+    return result.sort((a, b) => b.startIndex - a.startIndex);
   }
 
   // Return all deduplicated zones sorted by recency

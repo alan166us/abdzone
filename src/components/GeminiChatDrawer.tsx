@@ -13,7 +13,12 @@ import {
   ShieldAlert, 
   Check, 
   Copy,
-  Activity
+  Activity,
+  DollarSign,
+  ShieldCheck,
+  Target,
+  TrendingUp,
+  SlidersHorizontal
 } from 'lucide-react';
 
 interface ChatMessage {
@@ -32,13 +37,17 @@ interface GeminiChatDrawerProps {
   zones: SupplyDemandZone[];
   volatilityMetrics: VolatilityMetrics;
   recommendations: TradeRecommendation[];
+  initialMessage?: string;
+  initialRole?: 'daily_coach' | 'quant' | 'risk_architect' | 'fast_scalp';
 }
 
 const INITIAL_PROMPTS = [
-  '📊 Analyze current demand zone & entry validity',
-  '🛡️ Why is the stop-loss buffered at this ATR distance?',
-  '🎯 Which setup has the highest R:R ratio?',
-  '⚡ What does the current volatility regime imply?',
+  '🤝 What is our daily cashflow plan with limited risk?',
+  '🛡️ How do defined-risk spreads protect my downside here?',
+  '⏳ How does Theta time decay pay us daily rent?',
+  '🎯 Why do we lock in 50% profit early instead of waiting?',
+  '📖 What is the market background story behind this move?',
+  '⚡ Walk me through Delta & Probability of Profit (POP)',
 ];
 
 export const GeminiChatDrawer: React.FC<GeminiChatDrawerProps> = ({
@@ -50,15 +59,21 @@ export const GeminiChatDrawer: React.FC<GeminiChatDrawerProps> = ({
   zones,
   volatilityMetrics,
   recommendations,
+  initialMessage,
+  initialRole = 'daily_coach',
 }) => {
   const [selectedModel, setSelectedModel] = useState<'gemini-3.5-flash' | 'gemini-3.1-pro-preview' | 'gemini-3.1-flash-lite'>('gemini-3.5-flash');
-  const [selectedRole, setSelectedRole] = useState<'quant' | 'risk_architect' | 'fast_scalp'>('quant');
+  const [selectedRole, setSelectedRole] = useState<'daily_coach' | 'quant' | 'risk_architect' | 'fast_scalp'>(initialRole);
+  const [languageMode, setLanguageMode] = useState<'daily' | 'quant'>('daily');
+  const [dailyCashflowGoal, setDailyCashflowGoal] = useState<number>(250);
+  const [maxLossShield, setMaxLossShield] = useState<number>(150);
+  const [showGoalSettings, setShowGoalSettings] = useState<boolean>(false);
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => [
     {
       id: 'welcome',
       role: 'model',
-      content: `Hello! I am your real-time **Gemini AI** Market Copilot.\n\nI have live visibility into **${symbol}** trading at **$${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** with an ATR(14) of **$${volatilityMetrics?.atr?.toFixed(2) || 'N/A'}** and **${zones.length} active supply & demand zones**.\n\nAsk me anything about order blocks, liquidity sweeps, stop-loss buffer mathematics, or trade execution.`,
+      content: `Hello Partner! I am your real-time **Options Trading Coach & Partner**.\n\nWe are here to **make money together** with a crystal-clear mission: **steady daily cashflow with strictly limited downturn risk**.\n\nI have live visibility into **${symbol}** trading at **$${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** with an ATR swing of **$${volatilityMetrics?.atr?.toFixed(2) || 'N/A'}** and **${zones.length} active zones**.\n\nI speak in **clear daily language** and bring deep options expertise to our partnership:\n* **Theta Time Decay:** Harvesting daily option decay as reliable income\n* **Defined-Risk Spreads:** Buying protective wings so maximum loss is 100% capped\n* **The 50% Profit Rule:** Taking cash off the table early and recycling capital\n* **Market Story & Background:** Explaining exactly why buyers or sellers are moving price right now\n\nHow should we tackle today's cashflow target?`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     },
   ]);
@@ -66,6 +81,7 @@ export const GeminiChatDrawer: React.FC<GeminiChatDrawerProps> = ({
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const handledInitialRef = useRef<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -78,8 +94,23 @@ export const GeminiChatDrawer: React.FC<GeminiChatDrawerProps> = ({
     if (isOpen) {
       scrollToBottom();
       setTimeout(() => inputRef.current?.focus(), 150);
+
+      if (initialRole) {
+        setSelectedRole(initialRole);
+      }
+
+      if (initialMessage && handledInitialRef.current !== initialMessage) {
+        handledInitialRef.current = initialMessage;
+        handleSendMessage(initialMessage);
+      }
     }
-  }, [isOpen, messages]);
+  }, [isOpen, initialMessage, initialRole]);
+
+  useEffect(() => {
+    if (isOpen) {
+      scrollToBottom();
+    }
+  }, [messages]);
 
   if (!isOpen) return null;
 
@@ -115,6 +146,7 @@ export const GeminiChatDrawer: React.FC<GeminiChatDrawerProps> = ({
         body: JSON.stringify({
           model: selectedModel,
           role: selectedRole,
+          languageStyle: languageMode,
           messages: [...messages, userMsg].map((m) => ({
             role: m.role,
             content: m.content,
@@ -311,12 +343,24 @@ export const GeminiChatDrawer: React.FC<GeminiChatDrawerProps> = ({
         <div className="flex items-center gap-1">
           <span className="text-slate-500 uppercase hidden sm:inline">Role:</span>
           <button
+            onClick={() => { setSelectedRole('daily_coach'); setLanguageMode('daily'); }}
+            className={`px-2 py-0.5 rounded transition-colors flex items-center gap-1 ${
+              selectedRole === 'daily_coach'
+                ? 'bg-emerald-600 text-white font-semibold shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+            title="Senior Options Coach & Partner: daily cashflow gameplan, strictly limited downside risk, theta decay & daily language"
+          >
+            <span>🤝 Coach &amp; Partner</span>
+          </button>
+          <button
             onClick={() => { setSelectedRole('quant'); setSelectedModel('gemini-3.5-flash'); }}
             className={`px-1.5 py-0.5 rounded transition-colors ${
               selectedRole === 'quant'
-                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-semibold'
+                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 font-semibold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
+            title="Senior Quantitative Order Flow & SMC Specialist"
           >
             Quant
           </button>
@@ -327,6 +371,7 @@ export const GeminiChatDrawer: React.FC<GeminiChatDrawerProps> = ({
                 ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 font-semibold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
+            title="Chief Market Technician & Deep Risk Architect"
           >
             Risk Architect
           </button>
@@ -337,11 +382,76 @@ export const GeminiChatDrawer: React.FC<GeminiChatDrawerProps> = ({
                 ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 font-semibold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
+            title="Ultra-Fast Scalp & Volatility Assistant"
           >
             Fast Scalp
           </button>
         </div>
       </div>
+
+      {/* Partner Goal & Risk Shield Dashboard Widget */}
+      {selectedRole === 'daily_coach' && (
+        <div className="bg-gradient-to-r from-emerald-950/60 via-slate-900 to-sky-950/60 border-b border-emerald-900/40 px-3 py-2 text-xs">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1 text-emerald-400 font-mono font-semibold">
+                <DollarSign className="w-3.5 h-3.5" />
+                <span>Daily Target:</span>
+                <span className="text-white">${dailyCashflowGoal}/day</span>
+              </div>
+              <div className="flex items-center gap-1 text-rose-400 font-mono font-semibold">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Risk Shield:</span>
+                <span className="text-rose-300">-${maxLossShield} max stop</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setShowGoalSettings(!showGoalSettings)}
+                className="text-[10px] text-slate-400 hover:text-white p-1 rounded hover:bg-slate-800"
+                title="Adjust Daily Cashflow Goal & Risk Shield"
+              >
+                <SlidersHorizontal className="w-3 h-3" />
+              </button>
+              <button
+                onClick={() => handleSendMessage(`Partner, how do we reach our $${dailyCashflowGoal} daily cashflow target on ${symbol} today while keeping downside risk strictly capped under $${maxLossShield}?`)}
+                className="px-2 py-0.5 rounded bg-emerald-600/90 hover:bg-emerald-500 text-white font-mono text-[10px] font-bold shadow-sm transition-all flex items-center gap-1 cursor-pointer"
+              >
+                <Sparkles className="w-2.5 h-2.5 text-emerald-200" />
+                <span>Plan Today's Cashflow</span>
+              </button>
+            </div>
+          </div>
+
+          {showGoalSettings && (
+            <div className="mt-2 pt-2 border-t border-slate-800 grid grid-cols-2 gap-2 text-[11px] font-mono">
+              <div>
+                <label className="text-slate-400 block text-[9px] uppercase">Daily Cashflow Goal ($):</label>
+                <input
+                  type="number"
+                  value={dailyCashflowGoal}
+                  onChange={(e) => setDailyCashflowGoal(Number(e.target.value) || 100)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-emerald-400 font-bold focus:outline-none"
+                  step="50"
+                  min="50"
+                />
+              </div>
+              <div>
+                <label className="text-slate-400 block text-[9px] uppercase">Max Loss Shield Limit ($):</label>
+                <input
+                  type="number"
+                  value={maxLossShield}
+                  onChange={(e) => setMaxLossShield(Number(e.target.value) || 50)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-rose-400 font-bold focus:outline-none"
+                  step="50"
+                  min="25"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Messages Scroll Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 font-sans text-xs">
@@ -439,7 +549,11 @@ export const GeminiChatDrawer: React.FC<GeminiChatDrawerProps> = ({
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={`Ask Gemini about ${symbol} order flow, SL buffer, or setups...`}
+            placeholder={
+              languageMode === 'daily'
+                ? `Ask in plain daily words: "What's the market story?", "Why this entry/stop?", etc.`
+                : `Ask quantitative query about ${symbol} order flow, SL buffer, or SMC setups...`
+            }
             disabled={isStreaming}
             className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3.5 py-2 text-white font-sans text-xs placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 disabled:opacity-50"
           />

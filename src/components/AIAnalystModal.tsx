@@ -26,8 +26,9 @@ export const AIAnalystModal: React.FC<AIAnalystModalProps> = ({
   const [analysisText, setAnalysisText] = useState<string>('');
   const [source, setSource] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [languageStyle, setLanguageStyle] = useState<'daily' | 'quant'>('daily');
 
-  const fetchAnalysis = async () => {
+  const fetchAnalysis = async (styleToUse: 'daily' | 'quant' = languageStyle) => {
     setIsLoading(true);
     try {
       const res = await fetch('/api/ai/deep-analysis', {
@@ -40,13 +41,14 @@ export const AIAnalystModal: React.FC<AIAnalystModalProps> = ({
           zones,
           volatilityMetrics,
           recommendations,
+          languageStyle: styleToUse,
         }),
       });
 
       const data = await res.json();
       if (data && data.analysis) {
         setAnalysisText(data.analysis);
-        setSource(data.source || 'quant-engine');
+        setSource(data.source || 'ai-engine');
       }
     } catch (err) {
       console.error('Failed to fetch AI analysis', err);
@@ -56,9 +58,15 @@ export const AIAnalystModal: React.FC<AIAnalystModalProps> = ({
     }
   };
 
+  const handleToggleStyle = (newStyle: 'daily' | 'quant') => {
+    if (newStyle === languageStyle) return;
+    setLanguageStyle(newStyle);
+    fetchAnalysis(newStyle);
+  };
+
   useEffect(() => {
     if (isOpen && !analysisText) {
-      fetchAnalysis();
+      fetchAnalysis(languageStyle);
     }
   }, [isOpen]);
 
@@ -74,7 +82,7 @@ export const AIAnalystModal: React.FC<AIAnalystModalProps> = ({
               <Sparkles className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-white font-display">Institutional Order Flow Analyst</h3>
+              <h3 className="text-sm font-bold text-white font-display">AI Market Copilot · Analysis</h3>
               <p className="text-[11px] text-slate-400 font-mono">
                 {symbol} · {timeframe} · Spot ${currentPrice.toFixed(2)}
               </p>
@@ -82,8 +90,36 @@ export const AIAnalystModal: React.FC<AIAnalystModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Language Style Switcher */}
+            <div className="bg-slate-900/90 border border-slate-700/80 rounded-lg p-0.5 flex items-center gap-0.5 text-[11px] font-mono">
+              <button
+                type="button"
+                onClick={() => handleToggleStyle('daily')}
+                className={`px-2.5 py-1 rounded transition-colors ${
+                  languageStyle === 'daily'
+                    ? 'bg-emerald-600 text-white font-semibold shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Explain in everyday daily language with market story and the 'why'"
+              >
+                🗣️ Daily Plain Talk
+              </button>
+              <button
+                type="button"
+                onClick={() => handleToggleStyle('quant')}
+                className={`px-2.5 py-1 rounded transition-colors ${
+                  languageStyle === 'quant'
+                    ? 'bg-purple-600 text-white font-semibold shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Institutional quantitative SMC analysis"
+              >
+                🔬 Technical Quant
+              </button>
+            </div>
+
             <button
-              onClick={fetchAnalysis}
+              onClick={() => fetchAnalysis(languageStyle)}
               disabled={isLoading}
               className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors disabled:opacity-50"
               title="Refresh Analysis"

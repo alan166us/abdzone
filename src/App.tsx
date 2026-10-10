@@ -10,6 +10,7 @@ import { SchwabOptionsTrader } from './components/SchwabOptionsTrader';
 import { TradingJournal } from './components/TradingJournal';
 import { OpportunityMonitor } from './components/OpportunityMonitor';
 import { ThinkorswimPostModal } from './components/ThinkorswimPostModal';
+import { QAMonitorModal } from './components/QAMonitorModal';
 import { AIAnalystModal } from './components/AIAnalystModal';
 import { DataImportModal } from './components/DataImportModal';
 import { SchwabConnectModal } from './components/SchwabConnectModal';
@@ -50,9 +51,18 @@ export default function App() {
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState<boolean>(false);
   const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
   const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
+  const [chatInitialMessage, setChatInitialMessage] = useState<string | undefined>(undefined);
+  const [chatInitialRole, setChatInitialRole] = useState<'daily_coach' | 'quant' | 'risk_architect' | 'fast_scalp'>('daily_coach');
   const [isTosModalOpen, setIsTosModalOpen] = useState<boolean>(false);
+  const [isQaMonitorOpen, setIsQaMonitorOpen] = useState<boolean>(false);
   const [notification, setNotification] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+
+  const handleOpenAiChatWithPrompt = (msg?: string, role: 'daily_coach' | 'quant' | 'risk_architect' | 'fast_scalp' = 'daily_coach') => {
+    setChatInitialMessage(msg);
+    setChatInitialRole(role);
+    setIsChatOpen(true);
+  };
 
   // Institutional Trading Journal State with localStorage persistence
   const [journalTrades, setJournalTrades] = useState<JournalTrade[]>(() => {
@@ -254,13 +264,28 @@ export default function App() {
     };
   }, [candles, selectedAsset, customBufferMultiplier]);
 
-  // 2. Automatically Detect Supply & Demand Zones
+  // 2. Automatically Detect Supply & Demand Zones:
+  // Strictly keep ONLY the single most recent active Demand & single most recent Supply zone
   const zones = useMemo(() => {
     return detectSupplyDemandZones(candles, {
       atrPeriod: 14,
       minImpulseMultiplier: 1.25,
       maxBaseCandles: 4,
       useWickForBoundary: true,
+      recentOnly: true,
+      maxRecentZonesPerType: 1, // Strictly 1 recent demand and 1 recent supply zone
+      includeMitigated: false,
+    });
+  }, [candles]);
+
+  // All historical zones for the Zone Radar Grid table
+  const allHistoricalZones = useMemo(() => {
+    return detectSupplyDemandZones(candles, {
+      atrPeriod: 14,
+      minImpulseMultiplier: 1.25,
+      maxBaseCandles: 4,
+      useWickForBoundary: true,
+      recentOnly: false,
     });
   }, [candles]);
 
@@ -472,6 +497,7 @@ export default function App() {
         onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
         onOpenAiAnalyst={() => setIsAiModalOpen(true)}
         onOpenAiChat={() => setIsChatOpen((prev) => !prev)}
+        onOpenQaMonitor={() => setIsQaMonitorOpen(true)}
         selectedAsset={selectedAsset}
         onSelectAsset={handleSelectAsset}
         alertCount={alertCount}
@@ -490,7 +516,7 @@ export default function App() {
             <div className="lg:col-span-3 h-full flex flex-col min-h-0">
               <CandleChart
                 candles={candles}
-                zones={zones}
+                zones={allHistoricalZones}
                 volatilityMetrics={volatilityMetrics}
                 selectedRecommendation={selectedRecommendation}
                 onSelectZone={handleSelectZone}
@@ -541,6 +567,7 @@ export default function App() {
                     setIsTosModalOpen(true);
                   }}
                   onLogToJournal={handleLogRecommendationToJournal}
+                  onOpenAiChat={handleOpenAiChatWithPrompt}
                 />
 
                 {/* Secondary Section: Pristine Untested Order Blocks */}
@@ -618,7 +645,9 @@ export default function App() {
               onSelectRecommendation={handleSelectRecommendation}
               onOpenSchwabModal={() => setIsSchwabModalOpen(true)}
               onOpenTosModal={() => setIsTosModalOpen(true)}
+              onOpenQaMonitor={() => setIsQaMonitorOpen(true)}
               onLogToJournal={handleLogRecommendationToJournal}
+              onOpenAiChat={handleOpenAiChatWithPrompt}
             />
           </div>
         )}
@@ -640,7 +669,7 @@ export default function App() {
         {activeTab === 'radar' && (
           <div className="h-full w-full rounded-lg border border-slate-800/80 overflow-hidden shadow-xl flex flex-col min-h-0 flex-1">
             <ZoneRadar
-              zones={zones}
+              zones={allHistoricalZones}
               onSelectZone={handleSelectZone}
               selectedZoneId={selectedZoneId}
             />
@@ -748,13 +777,18 @@ export default function App() {
       {/* Real-Time Gemini 3.8 Flash AI Chat Drawer */}
       <GeminiChatDrawer
         isOpen={isChatOpen}
-        onClose={() => setIsChatOpen(false)}
+        onClose={() => {
+          setIsChatOpen(false);
+          setChatInitialMessage(undefined);
+        }}
         symbol={selectedAsset}
         currentPrice={currentPrice}
         timeframe="1H"
         zones={zones}
         volatilityMetrics={volatilityMetrics}
         recommendations={recommendations}
+        initialMessage={chatInitialMessage}
+        initialRole={chatInitialRole}
       />
 
       {/* Thinkorswim Order Posting Walkthrough & Clipboard Helper Modal */}
@@ -764,6 +798,15 @@ export default function App() {
         recommendation={selectedRecommendation}
         symbol={selectedAsset}
         volatilityMetrics={volatilityMetrics}
+        onOpenSchwabModal={() => setIsSchwabModalOpen(true)}
+        onOpenQaMonitor={() => setIsQaMonitorOpen(true)}
+      />
+
+      {/* QA Safety & Pre-Flight Order Monitor Modal */}
+      <QAMonitorModal
+        isOpen={isQaMonitorOpen}
+        onClose={() => setIsQaMonitorOpen(false)}
+        activeSymbol={selectedAsset}
       />
 
       {/* Floating Real-Time Gemini Chat Trigger */}

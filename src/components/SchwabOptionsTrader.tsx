@@ -2,6 +2,10 @@ import React, { useState } from 'react';
 import { TradeRecommendation, VolatilityMetrics, SupplyDemandZone } from '../types/trading';
 import { 
   generateSchwabOptionPlay, 
+  formatTosOptionCommand,
+  formatTosNaturalOptionCommand,
+  formatTosNaturalOptionExitCommand,
+  generateTosFullOrderSetSummary,
   SchwabOptionContractRecommendation, 
   ExpirationStyle, 
   StrikeBias 
@@ -27,7 +31,9 @@ import {
   AlertTriangle,
   Terminal,
   Keyboard,
-  BookOpen
+  BookOpen,
+  Send,
+  Lock
 } from 'lucide-react';
 
 interface SchwabOptionsTraderProps {
@@ -40,7 +46,9 @@ interface SchwabOptionsTraderProps {
   onSelectRecommendation: (rec: TradeRecommendation) => void;
   onOpenSchwabModal?: () => void;
   onOpenTosModal?: () => void;
+  onOpenQaMonitor?: () => void;
   onLogToJournal?: (rec: TradeRecommendation) => void;
+  onOpenAiChat?: (initialMessage?: string, role?: 'daily_coach' | 'quant' | 'risk_architect' | 'fast_scalp') => void;
 }
 
 export const SchwabOptionsTrader: React.FC<SchwabOptionsTraderProps> = ({
@@ -53,7 +61,9 @@ export const SchwabOptionsTrader: React.FC<SchwabOptionsTraderProps> = ({
   onSelectRecommendation,
   onOpenSchwabModal,
   onOpenTosModal,
+  onOpenQaMonitor,
   onLogToJournal,
+  onOpenAiChat,
 }) => {
   // Option Parameters
   const [expirationStyle, setExpirationStyle] = useState<ExpirationStyle>('swing');
@@ -119,10 +129,25 @@ export const SchwabOptionsTrader: React.FC<SchwabOptionsTraderProps> = ({
         </div>
 
         <div className="flex items-center gap-2.5">
+          {onOpenAiChat && (
+            <button
+              onClick={() => {
+                onOpenAiChat(
+                  `Partner, let's review this ${optionPlay.optionType} option setup on ${symbol} ($${optionPlay.strike} Strike, Exp: ${optionPlay.expirationDisplay}): Entry @ $${optionPlay.entry.premium.toFixed(2)}, Stop-Loss @ $${optionPlay.stopLoss.premium.toFixed(2)} (Max Loss: $${totalMaxLoss.toFixed(2)}), Target @ $${optionPlay.target.premium.toFixed(2)}. How do we manage this trade for safe daily cashflow with limited downside?`,
+                  'daily_coach'
+                );
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors shadow-sm cursor-pointer"
+              title="Ask Options Coach to review this order ticket and risk parameters"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-emerald-200" />
+              <span>Ask Options Coach</span>
+            </button>
+          )}
           {onOpenTosModal && (
             <button
               onClick={onOpenTosModal}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors shadow-sm cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white rounded-lg transition-colors shadow-sm cursor-pointer"
               title="Open step-by-step guide to paste into thinkorswim"
             >
               <Terminal className="w-3.5 h-3.5" />
@@ -343,7 +368,7 @@ export const SchwabOptionsTrader: React.FC<SchwabOptionsTraderProps> = ({
             </div>
             <div>
               <span className="text-slate-500 block text-[10px]">RISK / REWARD:</span>
-              <span className="font-bold text-emerald-400">1 : {optionPlay.target.riskRewardRatio}</span>
+              <span className="font-bold text-emerald-400">1 : {Number(optionPlay.target.riskRewardRatio).toFixed(1)}</span>
             </div>
           </div>
         </div>
@@ -477,7 +502,7 @@ export const SchwabOptionsTrader: React.FC<SchwabOptionsTraderProps> = ({
                 </div>
                 <div className="flex items-center justify-between text-slate-300">
                   <span className="text-slate-400">Risk-to-Reward Ratio:</span>
-                  <span className="font-mono font-bold text-emerald-400">1 : {optionPlay.target.riskRewardRatio}</span>
+                  <span className="font-mono font-bold text-emerald-400">1 : {Number(optionPlay.target.riskRewardRatio).toFixed(1)}</span>
                 </div>
                 <div className="flex items-center justify-between text-slate-300">
                   <span className="text-slate-400">Order Exit Type:</span>
@@ -589,7 +614,7 @@ export const SchwabOptionsTrader: React.FC<SchwabOptionsTraderProps> = ({
                   activeTab === 'bracket' ? 'bg-sky-600 text-white font-semibold' : 'text-slate-400 hover:text-white'
                 }`}
               >
-                thinkorswim OCO String
+                thinkorswim Order Entry
               </button>
             </div>
           </div>
@@ -658,7 +683,31 @@ export const SchwabOptionsTrader: React.FC<SchwabOptionsTraderProps> = ({
 
               {/* Quick Action Buttons */}
               <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {onOpenTosModal && (
+                    <button
+                      type="button"
+                      onClick={onOpenTosModal}
+                      className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all shadow-md cursor-pointer"
+                      title="Run QA pre-flight audit and stage order set for ThinkorSwim / PaperMoney"
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      <span>🧪 Pre-Flight QA Audit &amp; TOS Staging</span>
+                    </button>
+                  )}
+
+                  {onOpenQaMonitor && (
+                    <button
+                      type="button"
+                      onClick={onOpenQaMonitor}
+                      className="flex items-center gap-1.5 px-3 py-2 bg-rose-950/40 hover:bg-rose-900/50 text-rose-300 border border-rose-800/80 rounded-lg text-xs font-mono font-semibold transition-all shadow-sm cursor-pointer"
+                      title="Inspect institutional QA safety guardrails and audit telemetry"
+                    >
+                      <Lock className="w-3.5 h-3.5 text-rose-400" />
+                      <span>QA Monitor (Locked)</span>
+                    </button>
+                  )}
+
                   <button
                     type="button"
                     onClick={() => handleCopy(optionPlay.schwabWebSummary, 'summary')}
@@ -714,69 +763,260 @@ export const SchwabOptionsTrader: React.FC<SchwabOptionsTraderProps> = ({
               </div>
             </div>
           ) : (
-            /* thinkorswim Bracket Order String */
+            /* thinkorswim Single Limit Option Order String (Verified) */
             <div className="space-y-3 font-mono">
               <div>
-                <span className="text-[11px] text-slate-400 block mb-1">
-                  1st Triggers OCO Bracket Order (Entry $\rightarrow$ Stop & Target):
-                </span>
-                <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 text-slate-200 text-xs break-all select-all font-semibold">
-                  {optionPlay.schwabBracketCommand}
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[11px] font-bold text-sky-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Terminal className="w-3.5 h-3.5" />
+                    <span>Universal thinkorswim Command ({contractQty} Contract{contractQty > 1 ? 's' : ''}):</span>
+                  </span>
+                  <span className="text-[10px] text-emerald-400 font-semibold">TOS Desktop Verified</span>
+                </div>
+                <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 text-sky-200 text-xs break-all select-all font-bold flex items-center justify-between">
+                  <span>{formatTosNaturalOptionCommand(optionPlay.ticker, optionPlay.tosExpirationStr, optionPlay.strike, optionPlay.optionType, optionPlay.entry.premium, contractQty)}</span>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between pt-1">
-                <button
-                  type="button"
-                  onClick={() => handleCopy(optionPlay.schwabBracketCommand, 'tosBracket')}
-                  className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold transition-colors shadow-sm"
-                >
-                  {copiedType === 'tosBracket' ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-white" />
-                      <span>Copied Bracket String!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5" />
-                      <span>Copy 1st Triggers OCO Bracket</span>
-                    </>
-                  )}
-                </button>
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(formatTosNaturalOptionCommand(optionPlay.ticker, optionPlay.tosExpirationStr, optionPlay.strike, optionPlay.optionType, optionPlay.entry.premium, contractQty), 'tosNaturalOrder')}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold transition-colors shadow-sm cursor-pointer"
+                  >
+                    {copiedType === 'tosNaturalOrder' ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-white" />
+                        <span>Copied TOS Option Order!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy TOS Entry: BUY +{contractQty} SINGLE...</span>
+                      </>
+                    )}
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => handleCopy(optionPlay.schwabOrderCommand, 'tosSingle')}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-mono transition-colors"
-                >
-                  {copiedType === 'tosSingle' ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Copied Single Limit!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5" />
-                      <span>Copy Single Limit Order</span>
-                    </>
-                  )}
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(generateTosFullOrderSetSummary(optionPlay, contractQty), 'tosFullSummary')}
+                    className="flex items-center gap-1.5 px-3.5 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-semibold transition-colors shadow-sm cursor-pointer"
+                    title="Copy complete 5-row blueprint with all Entry, Stop, and Target legs"
+                  >
+                    {copiedType === 'tosFullSummary' ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-white" />
+                        <span>Copied Full Order Set!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy Full Order Set Blueprint</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
 
-              {/* Quick thinkorswim instructions */}
-              <div className="p-3 rounded-lg bg-slate-950/80 border border-slate-800 text-[11px] font-mono text-slate-300 space-y-1.5 mt-2">
-                <div className="font-bold text-sky-400 flex items-center gap-1.5">
+              {/* Multi-Target (3 Targets) & Stop-Loss (2 Stops) Bracket Hub */}
+              <div className="p-3 bg-slate-900/90 rounded-lg border border-slate-800 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1">
+                    <Target className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Exit Bracket Suite (2 Stops · 3 Targets)</span>
+                  </span>
+                  <span className="text-[10px] text-slate-400">Scale Out & Protection</span>
+                </div>
+
+                {/* 3 Targets Grid */}
+                <div>
+                  <div className="text-[10px] text-emerald-400 font-semibold mb-1 flex items-center gap-1">
+                    <span>Take-Profit Targets (TP1, TP2, TP3):</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                    {/* TP1 */}
+                    <div className="p-2 rounded bg-slate-950 border border-emerald-900/50 flex flex-col justify-between">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] text-slate-400 font-bold">TP1 (1:2 R:R)</span>
+                        <span className="text-emerald-300 font-bold text-xs">${optionPlay.target.tp1.premium.toFixed(2)}</span>
+                      </div>
+                      <div className="text-[9px] text-emerald-400/80 mb-1.5">+{optionPlay.target.tp1.percentGain}% (+${optionPlay.target.tp1.profitPerContract}/ct)</div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(optionPlay.target.tp1.premium.toFixed(2), 'tp1Val')}
+                          className="flex-1 py-1 px-1.5 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 rounded text-[10px] font-bold cursor-pointer transition-colors"
+                        >
+                          {copiedType === 'tp1Val' ? '✓ Copied' : `$${optionPlay.target.tp1.premium.toFixed(2)}`}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(formatTosNaturalOptionExitCommand(optionPlay.ticker, optionPlay.tosExpirationStr, optionPlay.strike, optionPlay.optionType, optionPlay.target.tp1.premium, 'LMT', 1), 'tp1Cmd')}
+                          className="py-1 px-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[10px] cursor-pointer"
+                          title="Copy TOS Order line: SELL -1 SINGLE..."
+                        >
+                          {copiedType === 'tp1Cmd' ? '✓' : 'TOS'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* TP2 */}
+                    <div className="p-2 rounded bg-slate-950 border border-emerald-800/80 bg-emerald-950/20 flex flex-col justify-between">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] text-emerald-400 font-bold">TP2 (Opposing)</span>
+                        <span className="text-emerald-300 font-bold text-xs">${optionPlay.target.tp2.premium.toFixed(2)}</span>
+                      </div>
+                      <div className="text-[9px] text-emerald-400/80 mb-1.5">+{optionPlay.target.tp2.percentGain}% (+${optionPlay.target.tp2.profitPerContract}/ct)</div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(optionPlay.target.tp2.premium.toFixed(2), 'tp2Val')}
+                          className="flex-1 py-1 px-1.5 bg-emerald-900/80 hover:bg-emerald-850 border border-emerald-700 text-emerald-200 rounded text-[10px] font-bold cursor-pointer transition-colors"
+                        >
+                          {copiedType === 'tp2Val' ? '✓ Copied' : `$${optionPlay.target.tp2.premium.toFixed(2)}`}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(formatTosNaturalOptionExitCommand(optionPlay.ticker, optionPlay.tosExpirationStr, optionPlay.strike, optionPlay.optionType, optionPlay.target.tp2.premium, 'LMT', 1), 'tp2Cmd')}
+                          className="py-1 px-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[10px] cursor-pointer"
+                          title="Copy TOS Order line: SELL -1 SINGLE..."
+                        >
+                          {copiedType === 'tp2Cmd' ? '✓' : 'TOS'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* TP3 */}
+                    <div className="p-2 rounded bg-slate-950 border border-emerald-900/50 flex flex-col justify-between">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] text-slate-400 font-bold">TP3 (Runner)</span>
+                        <span className="text-emerald-300 font-bold text-xs">${optionPlay.target.tp3.premium.toFixed(2)}</span>
+                      </div>
+                      <div className="text-[9px] text-emerald-400/80 mb-1.5">+{optionPlay.target.tp3.percentGain}% (+${optionPlay.target.tp3.profitPerContract}/ct)</div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(optionPlay.target.tp3.premium.toFixed(2), 'tp3Val')}
+                          className="flex-1 py-1 px-1.5 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 rounded text-[10px] font-bold cursor-pointer transition-colors"
+                        >
+                          {copiedType === 'tp3Val' ? '✓ Copied' : `$${optionPlay.target.tp3.premium.toFixed(2)}`}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(formatTosNaturalOptionExitCommand(optionPlay.ticker, optionPlay.tosExpirationStr, optionPlay.strike, optionPlay.optionType, optionPlay.target.tp3.premium, 'LMT', 1), 'tp3Cmd')}
+                          className="py-1 px-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[10px] cursor-pointer"
+                          title="Copy TOS Order line: SELL -1 SINGLE..."
+                        >
+                          {copiedType === 'tp3Cmd' ? '✓' : 'TOS'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2 Stop-Loss Levels */}
+                <div>
+                  <div className="text-[10px] text-rose-400 font-semibold mb-1 flex items-center gap-1">
+                    <span>Protective Stop-Loss Options (2 Levels):</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                    {/* Hard SL */}
+                    <div className="p-2 rounded bg-slate-950 border border-rose-900/60 flex flex-col justify-between">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] text-rose-400 font-bold">Hard SL (Zone Distal + ATR)</span>
+                        <span className="text-rose-300 font-bold text-xs">${optionPlay.stopLoss.premium.toFixed(2)}</span>
+                      </div>
+                      <div className="text-[9px] text-rose-400/80 mb-1.5">{optionPlay.stopLoss.percentLoss}% (${optionPlay.stopLoss.lossPerContract}/ct)</div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(optionPlay.stopLoss.premium.toFixed(2), 'slHardVal')}
+                          className="flex-1 py-1 px-1.5 bg-rose-950/80 hover:bg-rose-900 border border-rose-800 text-rose-300 rounded text-[10px] font-bold cursor-pointer transition-colors"
+                        >
+                          {copiedType === 'slHardVal' ? '✓ Copied' : `$${optionPlay.stopLoss.premium.toFixed(2)}`}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(formatTosNaturalOptionExitCommand(optionPlay.ticker, optionPlay.tosExpirationStr, optionPlay.strike, optionPlay.optionType, optionPlay.stopLoss.premium, 'STP', contractQty), 'slHardCmd')}
+                          className="py-1 px-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[10px] cursor-pointer"
+                          title="Copy TOS Stop Order line: SELL -... SINGLE... STP"
+                        >
+                          {copiedType === 'slHardCmd' ? '✓' : 'TOS'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Conservative Midline Stop */}
+                    {(() => {
+                      const consStopPrem = Number((Math.max(0.30, optionPlay.entry.premium * 0.70)).toFixed(2));
+                      return (
+                        <div className="p-2 rounded bg-slate-950 border border-amber-900/60 flex flex-col justify-between">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[10px] text-amber-400 font-bold">Conservative SL (30% Max Loss / 3-Bar)</span>
+                            <span className="text-amber-300 font-bold text-xs">${consStopPrem.toFixed(2)}</span>
+                          </div>
+                          <div className="text-[9px] text-amber-400/80 mb-1.5">-30% Loss Cap / Tight Risk</div>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(consStopPrem.toFixed(2), 'slConsVal')}
+                              className="flex-1 py-1 px-1.5 bg-amber-950/80 hover:bg-amber-900 border border-amber-800 text-amber-300 rounded text-[10px] font-bold cursor-pointer transition-colors"
+                            >
+                              {copiedType === 'slConsVal' ? '✓ Copied' : `$${consStopPrem.toFixed(2)}`}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(formatTosNaturalOptionExitCommand(optionPlay.ticker, optionPlay.tosExpirationStr, optionPlay.strike, optionPlay.optionType, consStopPrem, 'STP', contractQty), 'slConsCmd')}
+                              className="py-1 px-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[10px] cursor-pointer"
+                              title="Copy TOS Stop Order line: SELL -... SINGLE... STP"
+                            >
+                              {copiedType === 'slConsCmd' ? '✓' : 'TOS'}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </div>
+
+              {/* Step-by-step thinkorswim instructions */}
+              <div className="p-3.5 rounded-lg bg-slate-950/90 border border-slate-800 text-[11px] font-mono text-slate-300 space-y-2.5 mt-2">
+                <div className="font-bold text-sky-400 flex items-center gap-1.5 text-xs">
                   <Keyboard className="w-3.5 h-3.5" />
-                  <span>How to Paste into thinkorswim in 3 Seconds:</span>
+                  <span>Why One Buy Order Appeared & How to Attach 2 Stops + 3 Targets:</span>
                 </div>
-                <div className="text-slate-400">
-                  1. Click <strong className="text-slate-200">"Copy 1st Triggers OCO Bracket"</strong> above.
+                <div className="space-y-2 text-slate-300 leading-relaxed">
+                  <div className="p-2.5 rounded bg-slate-900/90 border border-emerald-900/60 space-y-2">
+                    <div className="font-semibold text-emerald-400 flex items-center gap-1">
+                      <span>✓ Understanding Thinkorswim Clipboard & Multi-Target Execution:</span>
+                    </div>
+                    <p className="text-[10.5px] text-slate-300 leading-relaxed">
+                      Pasting <code className="text-sky-300 font-bold bg-slate-950 px-1 py-0.5 rounded">BUY +{contractQty} SINGLE...</code> creates the <strong>Primary Entry Ticket</strong>. In Thinkorswim, child bracket exits (Stops & Targets) are added through the <strong>Advanced Order</strong> template:
+                    </p>
+                    <ol className="list-decimal list-inside space-y-1.5 pl-1 text-[11px]">
+                      <li>
+                        <strong>For 1 Target & 1 Stop:</strong> In TOS Order Entry, change the <strong>Advanced Order</strong> dropdown from <em>Single Order</em> to <strong className="text-white">&quot;1st Triggers OCO&quot;</strong>.
+                      </li>
+                      <li>
+                        <strong>For 2 Targets & 2 Stops (Scaling 2 Contracts):</strong> Change the dropdown to <strong className="text-white">&quot;1st Triggers 2 OCO&quot;</strong>. TOS automatically creates 2 Target rows (+1 contract each) and 2 Stop rows linked with chain icons!
+                      </li>
+                      <li>
+                        <strong>For 3 Targets (TP1, TP2, TP3):</strong> Select <strong className="text-white">&quot;1st Triggers 3 OCO&quot;</strong> (or right-click the green BUY row → <em>Add Order to OCO</em>).
+                      </li>
+                      <li>
+                        Set the price on each row using the 1-click price buttons above: TP1 (<strong>${optionPlay.target.tp1.premium.toFixed(2)}</strong>), TP2 (<strong>${optionPlay.target.tp2.premium.toFixed(2)}</strong>), TP3 (<strong>${optionPlay.target.tp3.premium.toFixed(2)}</strong>), and SL (<strong>${optionPlay.stopLoss.premium.toFixed(2)}</strong>).
+                      </li>
+                    </ol>
+                  </div>
                 </div>
-                <div className="text-slate-400">
-                  2. Open thinkorswim and press <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-sky-300 font-bold border border-slate-700">Ctrl + V</kbd> (or <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-sky-300 font-bold border border-slate-700">⌘ + V</kbd>), or right-click the Order Entry bar &rarr; <span className="text-sky-300 italic">"Paste order from clipboard"</span>.
-                </div>
-                <div className="text-slate-400">
-                  3. The order ticket loads automatically with Entry, Stop-Loss, and Target. Click <strong className="text-emerald-300">"Confirm and Send"</strong>!
+
+                <div className="p-2.5 rounded bg-sky-950/40 border border-sky-800/60 text-[10.5px] text-sky-200/90 flex items-start gap-2">
+                  <ShieldCheck className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
+                  <span>
+                    <strong>Auto-Cancellation (OCO):</strong> Because they are linked as OCO (One Cancels Other), when your Target hits, Thinkorswim instantly cancels your Stop-Loss automatically, ensuring you never have unprotected exposure!
+                  </span>
                 </div>
               </div>
             </div>

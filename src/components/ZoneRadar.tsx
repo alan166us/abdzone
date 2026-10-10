@@ -13,9 +13,10 @@ export const ZoneRadar: React.FC<ZoneRadarProps> = ({
   onSelectZone,
   selectedZoneId,
 }) => {
-  const [filterType, setFilterType] = useState<'all' | 'demand' | 'supply' | 'fresh' | 'mitigated'>('all');
+  const [filterType, setFilterType] = useState<'recent' | 'all' | 'demand' | 'supply' | 'fresh' | 'mitigated'>('recent');
 
   const filteredZones = zones.filter(z => {
+    if (filterType === 'recent') return z.isRecentPrimary;
     if (filterType === 'demand') return z.type === 'demand';
     if (filterType === 'supply') return z.type === 'supply';
     if (filterType === 'fresh') return !z.isMitigated && z.testedCount === 0;
@@ -36,6 +37,14 @@ export const ZoneRadar: React.FC<ZoneRadarProps> = ({
 
         {/* Filter Buttons */}
         <div className="flex items-center gap-1.5 p-1 bg-slate-900 border border-slate-800 rounded-lg text-xs">
+          <button
+            onClick={() => setFilterType('recent')}
+            className={`px-3 py-1.5 font-medium rounded transition-colors ${
+              filterType === 'recent' ? 'bg-sky-950/90 text-sky-300 border border-sky-800/80 font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            ⚡ Recent Active (1 D / 1 S)
+          </button>
           <button
             onClick={() => setFilterType('all')}
             className={`px-3 py-1.5 font-medium rounded transition-colors ${
@@ -116,9 +125,16 @@ export const ZoneRadar: React.FC<ZoneRadarProps> = ({
                         {isDemand ? <ArrowUpRight className="w-4 h-4 inline" /> : <ArrowDownRight className="w-4 h-4 inline" />}
                       </span>
                       <div>
-                        <span className="font-semibold text-slate-200">
-                          {isDemand ? 'Demand' : 'Supply'} · {zone.pattern}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold text-slate-200">
+                            {isDemand ? 'Demand' : 'Supply'} · {zone.pattern}
+                          </span>
+                          {zone.isRecentPrimary && (
+                            <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-sky-950/90 text-sky-300 border border-sky-700/80 uppercase tracking-wider animate-pulse">
+                              ★ Latest Active
+                            </span>
+                          )}
+                        </div>
                         <div className="text-[10px] text-slate-500">
                           {zone.pattern === 'DBR' && 'Drop-Base-Rally (Reversal)'}
                           {zone.pattern === 'RBR' && 'Rally-Base-Rally (Continuation)'}

@@ -1,6 +1,16 @@
 import React, { useState } from 'react';
 import { TradeRecommendation, VolatilityMetrics } from '../types/trading';
-import { generateSchwabOptionPlay, SchwabOptionContractRecommendation } from '../utils/optionsEngine';
+import { 
+  generateSchwabOptionPlay, 
+  SchwabOptionContractRecommendation,
+  formatTosOptionCommand,
+  formatTosNaturalOptionCommand,
+  formatTosStockOrFuturesCommand,
+  formatSchwabStockSummary,
+  getContractPointValue,
+  formatTosCompoundOptionBracketCommand,
+  formatTosCompoundStockOrFuturesBracketCommand
+} from '../utils/optionsEngine';
 import { 
   ArrowUpRight, 
   ArrowDownRight, 
@@ -21,7 +31,9 @@ import {
   Flame,
   ChevronDown,
   ChevronUp,
-  DollarSign
+  DollarSign,
+  AlertTriangle,
+  Sparkles
 } from 'lucide-react';
 
 export interface CustomTradeParams {
@@ -42,6 +54,7 @@ interface TradeRecommendationPanelProps {
   onOpenOptionsTab?: () => void;
   onOpenTosModal?: (rec: TradeRecommendation) => void;
   onLogToJournal?: (rec: TradeRecommendation) => void;
+  onOpenAiChat?: (initialMessage?: string, role?: 'daily_coach' | 'quant' | 'risk_architect' | 'fast_scalp') => void;
 }
 
 export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> = ({
@@ -54,13 +67,39 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
   onOpenOptionsTab,
   onOpenTosModal,
   onLogToJournal,
+  onOpenAiChat,
 }) => {
-  const [viewMode, setViewMode] = useState<'options' | 'shares'>('options');
+  const isFutures = Boolean(
+    ticker.toUpperCase().includes('MES') ||
+    ticker.toUpperCase().includes('ES') ||
+    ticker.toUpperCase().includes('NQ') ||
+    ticker.toUpperCase().includes('MNQ') ||
+    ticker.toUpperCase().includes('RTY') ||
+    ticker.toUpperCase().includes('CL') ||
+    ticker.toUpperCase().includes('GC')
+  );
+
+  const [viewMode, setViewMode] = useState<'options' | 'shares'>(() => isFutures ? 'shares' : 'options');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (isFutures) {
+      setViewMode('shares');
+    }
+  }, [isFutures, ticker]);
 
   // Dynamic R:R Calculator State (custom adjustments per trade recommendation)
   const [customParamsMap, setCustomParamsMap] = useState<Record<string, CustomTradeParams>>({});
   const [expandedCalcMap, setExpandedCalcMap] = useState<Record<string, boolean>>({});
+  const [expandedStoryMap, setExpandedStoryMap] = useState<Record<string, boolean>>({});
+
+  const toggleStory = (recId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpandedStoryMap((prev) => ({
+      ...prev,
+      [recId]: !prev[recId],
+    }));
+  };
 
   const handleCopyOrder = (text: string, id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -121,26 +160,35 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
   const computeMetrics = (rec: TradeRecommendation, params: CustomTradeParams) => {
     const isLong = rec.side === 'long';
     const entry = params.entry;
-    const stopLoss = params.stopLoss;
-    const target = params.target;
+    const rawRisk = isLong ? (params.entry - params.stopLoss) : (params.stopLoss - params.entry);
+    const risk = Math.max(0.25, rawRisk);
+    const reward = isLong ? Math.max(0, params.target - params.entry) : Math.max(0, params.entry - params.target);
 
-    const risk = isLong
-      ? Math.max(0.01, entry - stopLoss)
-      : Math.max(0.01, stopLoss - entry);
+    const cleanSym = (ticker || '').toUpperCase();
+    const isMesContract = cleanSym.includes('MES');
+    const isEsContract = !isMesContract && (cleanSym.includes('/ES') || cleanSym === 'ES');
+    const isMnqContract = cleanSym.includes('MNQ');
+    const isNqContract = !isMnqContract && (cleanSym.includes('/NQ') || cleanSym === 'NQ');
+    const isFuturesContract = isMesContract || isEsContract || isMnqContract || isNqContract || cleanSym.startsWith('/');
 
-    const reward = isLong
-      ? Math.max(0, target - entry)
-      : Math.max(0, entry - target);
+    const pointValue = isMesContract ? 5.0 : isEsContract ? 50.0 : isMnqContract ? 2.0 : isNqContract ? 20.0 : 1.0;
+    const commission = isFuturesContract ? 5.0 : 0.0; // round-turn commission
+    const netRiskDollars = (risk * pointValue) + commission;
+    const netRewardDollars = Math.max(0, (reward * pointValue) - commission);
+    const netRR = netRiskDollars > 0 ? Number((netRewardDollars / netRiskDollars).toFixed(2)) : 0;
 
-    const rrRatio = risk > 0 ? reward / risk : 0;
+    const rrRatio = netRR > 0 ? netRR : (risk > 0 ? Number((reward / risk).toFixed(2)) : 0);
     const riskPercent = entry > 0 ? (risk / entry) * 100 : 0;
     const rewardPercent = entry > 0 ? (reward / entry) * 100 : 0;
     const beWinRate = rrRatio > 0 ? (1 / (1 + rrRatio)) * 100 : 50;
 
-    const shares = Math.max(1, Math.floor(params.riskBudget / risk));
-    const totalRiskDollars = shares * risk;
-    const totalRewardDollars = shares * reward;
-    const capitalRequired = shares * entry;
+    const riskPerContractOrShare = isFuturesContract ? netRiskDollars : risk;
+    const shares = Math.max(1, Math.floor(params.riskBudget / riskPerContractOrShare));
+    const totalRiskDollars = isFuturesContract ? shares * netRiskDollars : shares * risk;
+    const totalRewardDollars = isFuturesContract ? shares * netRewardDollars : shares * reward;
+    const capitalRequired = isFuturesContract
+      ? shares * (isMesContract ? 1350 : isEsContract ? 13500 : isMnqContract ? 2100 : isNqContract ? 21000 : entry)
+      : shares * entry;
 
     const totalSpan = risk + reward;
     const riskVisualPercent = totalSpan > 0 ? Math.min(80, Math.max(12, (risk / totalSpan) * 100)) : 25;
@@ -190,15 +238,21 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
       targetPrem = Number((entryPrem + gain).toFixed(2));
     }
 
-    const riskPerContract = Math.max(1, (entryPrem - stopPrem) * 100);
-    const rewardPerContract = Math.max(0, (targetPrem - entryPrem) * 100);
+    const cleanSym = (optionPlay.ticker || '').toUpperCase();
+    const isFuturesOpt = optionPlay.instrumentType === 'FUTURES_OPTION' || cleanSym.startsWith('/') || cleanSym === 'MES' || cleanSym.includes('MES');
+    const multiplier = isFuturesOpt ? 5.0 : (optionPlay.pointMultiplier || 100.0);
+    const riskPerContract = Math.max(1, (entryPrem - stopPrem) * multiplier);
+    const rewardPerContract = Math.max(0, (targetPrem - entryPrem) * multiplier);
     const optionRR = riskPerContract > 0 ? rewardPerContract / riskPerContract : 0;
     const contracts = Math.max(1, Math.floor(params.riskBudget / riskPerContract));
     const totalOptionRisk = contracts * riskPerContract;
     const totalOptionReward = contracts * rewardPerContract;
-    const totalOptionCost = contracts * optionPlay.entry.costPerContract;
+    // Calculate cost: (Premium * 5 * Contracts) for /MES and futures options, or (Premium * 100 * Contracts) for equities
+    const totalOptionCost = Number((entryPrem * multiplier * contracts).toFixed(2));
 
     return {
+      entryPrem,
+      stopPrem,
       targetPrem,
       riskPerContract,
       rewardPerContract,
@@ -207,6 +261,7 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
       totalOptionRisk,
       totalOptionReward,
       totalOptionCost,
+      multiplier,
     };
   };
 
@@ -245,7 +300,7 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
           }`}
         >
           <Building2 className="w-3.5 h-3.5" />
-          <span>Schwab Options Assist</span>
+          <span>{isFutures ? 'Futures Options Assist (/MES x5)' : 'Equity Options Assist (x100)'}</span>
         </button>
         <button
           type="button"
@@ -256,7 +311,7 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
               : 'text-slate-400 hover:text-slate-200'
           }`}
         >
-          <span>Stock Shares Plan</span>
+          <span>{isFutures ? 'Futures /MES Contract Plan' : 'Stock Shares Plan'}</span>
         </button>
       </div>
 
@@ -267,6 +322,7 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
         const metrics = computeMetrics(rec, params);
         const isExpanded = !!expandedCalcMap[rec.id];
         const effectiveRec = getEffectiveRec(rec);
+        const isDormant = rec.proximityPhase?.includes('Dormant') || (rec.distanceInAtr !== undefined && rec.distanceInAtr > 1.5);
 
         const optionPlay: SchwabOptionContractRecommendation = generateSchwabOptionPlay(
           effectiveRec,
@@ -274,6 +330,64 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
           volatilityMetrics
         );
         const optionMetrics = computeOptionMetrics(optionPlay, params);
+
+        const cleanSym = (ticker || '').toUpperCase();
+        const isMesContract = cleanSym.includes('MES');
+        const isFuturesContract = isMesContract || cleanSym.startsWith('/') || cleanSym.includes('ES') || cleanSym.includes('NQ');
+
+        // Dynamic Orders matching user's custom calculator sizing and price targets
+        const dynamicContractQty = optionMetrics.contracts;
+
+        // 1-leg single entry TOS option command
+        const dynamicNaturalTosCommand = formatTosNaturalOptionCommand(
+          optionPlay.ticker,
+          optionPlay.tosExpirationStr,
+          optionPlay.strike,
+          optionPlay.optionType,
+          optionMetrics.entryPrem,
+          dynamicContractQty
+        );
+
+        // Full 3-leg compound 1st Triggers OCO bracket TOS option command (Entry / SL / TP)
+        const dynamicCompoundTosOptionCommand = formatTosCompoundOptionBracketCommand(
+          optionPlay.ticker,
+          optionPlay.tosExpirationStr,
+          optionPlay.strike,
+          optionPlay.optionType,
+          optionMetrics.entryPrem,
+          optionMetrics.stopPrem,
+          optionMetrics.targetPrem,
+          dynamicContractQty
+        );
+
+        // 1-leg single entry Stock/Futures command
+        const dynamicStockTosCommand = formatTosStockOrFuturesCommand(
+          ticker,
+          rec.side,
+          metrics.shares,
+          params.entry
+        );
+
+        // Full 3-leg compound 1st Triggers OCO bracket Stock/Futures command
+        // For /MES: BUY +1 /MES LMT [entryPrice] DAY / SELL +1 /MES STP [stopPrice] GTC / SELL +1 /MES LMT [targetPrice] GTC
+        const dynamicCompoundStockOrFuturesCommand = formatTosCompoundStockOrFuturesBracketCommand(
+          ticker,
+          rec.side,
+          metrics.shares,
+          params.entry,
+          params.stopLoss,
+          params.target
+        );
+
+        const dynamicStockSchwabSummary = formatSchwabStockSummary(
+          ticker,
+          rec.side,
+          metrics.shares,
+          params.entry,
+          params.stopLoss,
+          params.target,
+          metrics.rrRatio
+        );
 
         return (
           <div
@@ -312,18 +426,205 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
               </div>
             </div>
 
+            {/* Proximity Phase & Execution Reaction Window Banner */}
+            {rec.proximityPhase && (
+              <div className={`mb-2.5 px-2.5 py-1.5 rounded text-[11px] font-mono flex items-center justify-between border ${
+                rec.proximityPhase.includes('Phase B')
+                  ? 'bg-emerald-950/70 border-emerald-500/80 text-emerald-300 shadow-sm shadow-emerald-950'
+                  : rec.proximityPhase.includes('Phase A')
+                  ? 'bg-amber-950/60 border-amber-500/80 text-amber-300'
+                  : 'bg-slate-950/70 border-slate-800 text-slate-400'
+              }`}>
+                <div className="flex items-center gap-2 font-bold">
+                  <span className={`w-2 h-2 rounded-full ${
+                    rec.proximityPhase.includes('Phase B') ? 'bg-emerald-400 animate-ping' :
+                    rec.proximityPhase.includes('Phase A') ? 'bg-amber-400 animate-pulse' : 'bg-slate-500'
+                  }`} />
+                  <span>{rec.proximityPhase}</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-[10px]">
+                  {rec.distanceInAtr !== undefined && (
+                    <span className="font-semibold">{rec.distanceInAtr.toFixed(1)}x ATR away</span>
+                  )}
+                  {rec.proximityPhase.includes('Phase A') && (
+                    <span className="text-amber-400 bg-amber-950/90 px-1 py-0.5 rounded border border-amber-800/80 font-bold">
+                      Arm DOM / 5–15m
+                    </span>
+                  )}
+                  {rec.proximityPhase.includes('Phase B') && (
+                    <span className="text-emerald-300 bg-emerald-900/90 px-1 py-0.5 rounded border border-emerald-700/80 font-bold">
+                      Active Touch / 1–2m
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* S.T.E.P. Execution Reality Check: Spot in No-Man's Land */}
+            {isDormant && (
+              <div className="mb-2.5 px-3 py-2 rounded bg-amber-950/40 border border-amber-600/70 text-xs font-mono space-y-1">
+                <div className="flex items-center gap-1.5 font-bold text-amber-300">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>S.T.E.P. Reality Check: Spot in "No Man's Land" ({rec.distanceInAtr?.toFixed(1)}x ATR away)</span>
+                </div>
+                <p className="text-[11px] text-amber-200/90 font-sans leading-relaxed">
+                  <strong>Do NOT enter now.</strong> Price is sitting far {isLong ? 'above Demand support' : 'below Supply resistance'}. Entering here chases price into potential intraday {isLong ? 'overhead resistance' : 'demand support'}.
+                  <br />
+                  <strong>Rule of S.T.E.P.:</strong> Keep this setup <strong>STAGED</strong> on radar. Only arm your OCO bracket if price {isLong ? 'pulls back to test the Demand proximal line' : 'rallies back up to test the Supply proximal line'} at <strong>${rec.entry.toFixed(2)}</strong>.
+                </p>
+              </div>
+            )}
+
+            {/* Plain Daily Language: Market Story & The "Why" Bar */}
+            <div className="mb-2.5 flex flex-wrap items-center justify-between gap-1.5 p-1.5 rounded-lg bg-slate-950/80 border border-slate-800">
+              <button
+                type="button"
+                onClick={(e) => toggleStory(rec.id, e)}
+                className={`px-2.5 py-1 rounded text-[11px] font-sans font-semibold flex items-center gap-1.5 transition-all cursor-pointer border ${
+                  expandedStoryMap[rec.id]
+                    ? 'bg-emerald-950 text-emerald-300 border-emerald-500/80 shadow-sm'
+                    : 'bg-slate-900/90 hover:bg-slate-850 text-emerald-400 hover:text-emerald-300 border-slate-700/80'
+                }`}
+                title="Explain this trade in everyday language with market background & the 'why'"
+              >
+                <span>🗣️ Explain in Plain Daily Language (Why & Market Story)</span>
+                {expandedStoryMap[rec.id] ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </button>
+
+              {onOpenAiChat && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenAiChat(
+                      `Explain this ${rec.side.toUpperCase()} setup on ${ticker} (${rec.pattern}) in plain daily language: what is the market movement story right now, and why are this entry ($${rec.entry.toFixed(2)}), stop-loss ($${rec.stopLoss.toFixed(2)}), and target ($${rec.takeProfit2.toFixed(2)}) chosen?`,
+                      'daily_coach'
+                    );
+                  }}
+                  className="px-2.5 py-1 rounded text-[10px] font-mono bg-sky-950/60 hover:bg-sky-900/80 border border-sky-800/80 text-sky-300 hover:text-white flex items-center gap-1 transition-colors cursor-pointer"
+                  title="Ask Gemini Copilot in Chat"
+                >
+                  <Sparkles className="w-3 h-3 text-sky-400 animate-pulse" />
+                  <span>Ask Gemini Copilot</span>
+                </button>
+              )}
+            </div>
+
+            {/* Plain Daily Language Breakdown Card (Expands when clicked) */}
+            {expandedStoryMap[rec.id] && (
+              <div className="mb-3 p-3.5 rounded-lg bg-gradient-to-br from-emerald-950/40 via-slate-950/70 to-slate-900/60 border border-emerald-600/70 text-slate-200 text-xs font-sans space-y-2.5 shadow-xl animate-in fade-in slide-in-from-top-1">
+                <div className="flex items-center justify-between font-bold text-emerald-300 text-xs border-b border-emerald-800/60 pb-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <span>🎙️ Plain Daily Talk: {ticker} {rec.side.toUpperCase()} Setup</span>
+                  </div>
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-900/80 text-emerald-300 border border-emerald-700/60">
+                    Friendly Coach Mode
+                  </span>
+                </div>
+
+                {/* 1. Market Movement Story */}
+                <div>
+                  <h5 className="font-semibold text-sky-300 text-[11px] flex items-center gap-1 mb-0.5">
+                    <span>📖 The Market Story (Background):</span>
+                  </h5>
+                  <p className="text-slate-300 text-[11px] leading-relaxed">
+                    {isLong 
+                      ? `${ticker} recently pulled back into a high-volume demand zone between $${rec.stopLoss.toFixed(2)} and $${rec.entry.toFixed(2)}. Previously, aggressive institutional buyers stepped in here with huge explosive volume. Price is returning to this floor, giving us a "trampoline" where buyers are waiting to defend their turf.`
+                      : `${ticker} recently pushed up into an overhead supply zone between $${rec.entry.toFixed(2)} and $${rec.stopLoss.toFixed(2)}. Sellers previously dumped heavy volume here. Price is returning to this ceiling, where sellers are expected to reject higher prices.`
+                    }
+                  </p>
+                </div>
+
+                {/* 2. The "Why" Behind Entry */}
+                <div>
+                  <h5 className="font-semibold text-emerald-300 text-[11px] flex items-center gap-1 mb-0.5">
+                    <span>🎯 Why Enter at ${rec.entry.toFixed(2)}?</span>
+                  </h5>
+                  <p className="text-slate-300 text-[11px] leading-relaxed">
+                    Rather than chasing the market midway ("no-man\'s land") and risking an immediate pullback, we wait for price to come to our wholesale discount price at <strong>${rec.entry.toFixed(2)}</strong>. This gives you maximum reward while keeping your risk minimal.
+                  </p>
+                </div>
+
+                {/* 3. The "Why" Behind Stop-Loss */}
+                <div>
+                  <h5 className="font-semibold text-rose-300 text-[11px] flex items-center gap-1 mb-0.5">
+                    <span>🛡️ Why is Stop-Loss at ${rec.stopLoss.toFixed(2)} (Breathing Room)?</span>
+                  </h5>
+                  <p className="text-slate-300 text-[11px] leading-relaxed">
+                    We gave the trade an extra <strong>{rec.bufferAtrMultiplier.toFixed(1)}x ATR cushion</strong> beyond the zone boundary. 
+                    <em>Why?</em> Because market makers love to trigger quick "stop hunts" right past obvious lines. This buffer protects you from normal intraday wiggles and only cuts the trade if the idea is genuinely dead.
+                  </p>
+                </div>
+
+                {/* 4. The "Why" Behind Targets */}
+                <div>
+                  <h5 className="font-semibold text-amber-300 text-[11px] flex items-center gap-1 mb-0.5">
+                    <span>🏁 Why These Profit Targets ($${rec.takeProfit1.toFixed(2)} / $${rec.takeProfit2.toFixed(2)} / $${rec.takeProfit3.toFixed(2)})?</span>
+                  </h5>
+                  <p className="text-slate-300 text-[11px] leading-relaxed">
+                    <strong>Target 1 ($${rec.takeProfit1.toFixed(2)}):</strong> Locks in 1:2 risk/reward to make the trade risk-free once hit.
+                    <br />
+                    <strong>Target 2 ($${rec.takeProfit2.toFixed(2)}):</strong> Sits right before the opposing wall before sellers/buyers can push back.
+                    <br />
+                    <strong>Target 3 ($${rec.takeProfit3.toFixed(2)}):</strong> A trend runner to capture maximum upside if momentum explodes.
+                  </p>
+                </div>
+
+                {/* 5. Coach & Partner Cashflow & Limited Risk Rule */}
+                <div className="p-2.5 rounded bg-slate-900/90 border border-emerald-500/30">
+                  <h5 className="font-semibold text-emerald-400 text-[11px] flex items-center gap-1 mb-1">
+                    <span>🤝 Partner Cashflow Rule: Limited Downside, Steady Income</span>
+                  </h5>
+                  <p className="text-slate-300 text-[11px] leading-relaxed">
+                    <strong>Defined Downside Only:</strong> Whether using defined options contracts or credit spreads, our max loss is 100% mathematically capped before entry (no open-ended risk!).
+                    <br />
+                    <strong>Daily Cashflow:</strong> Time decay (Theta) pays us daily rent as price stays beyond our floor/ceiling.
+                    <br />
+                    <strong>The 50% Profit Rule:</strong> When Target 1 hits, take profit on 50% of contracts and slide your stop to breakeven. Bank your daily cashflow and make the rest of the trade completely risk-free!
+                  </p>
+                </div>
+
+                {onOpenAiChat && (
+                  <div className="pt-2 border-t border-emerald-800/40 flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[10px] font-mono text-emerald-400/80">Options Trading Coach &amp; Partner Ready</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenAiChat(
+                          `Partner, how do we use this ${rec.side.toUpperCase()} setup on ${ticker} to generate daily cashflow with strictly limited downside risk? Walk me through the options strike, Theta decay, and our 50% profit exit rule.`,
+                          'daily_coach'
+                        );
+                      }}
+                      className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[11px] flex items-center gap-1 transition-colors cursor-pointer shadow-sm"
+                    >
+                      <Sparkles className="w-3 h-3 text-emerald-200" />
+                      <span>Ask Coach: Plan Daily Cashflow for This Setup →</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
             {viewMode === 'options' ? (
               /* SCHWAB OPTIONS ASSIST VIEW */
               <div className="space-y-2.5">
                 {/* Contract Badge */}
-                <div className="p-2.5 rounded bg-slate-950/80 border border-sky-900/60 flex items-center justify-between font-mono">
-                  <div className="flex items-center gap-2">
+                <div className="p-2.5 rounded bg-slate-950/80 border border-sky-900/60 flex flex-wrap items-center justify-between gap-2 font-mono">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className={`px-2 py-0.5 rounded font-bold text-xs ${
                       optionPlay.optionType === 'CALL'
                         ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
                         : 'bg-rose-950 text-rose-300 border border-rose-800'
                     }`}>
                       {optionPlay.ticker} ${optionPlay.strike} {optionPlay.optionType}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded font-bold text-[10px] tracking-wide uppercase border ${
+                      optionPlay.instrumentType === 'FUTURES_OPTION'
+                        ? 'bg-amber-950/90 text-amber-300 border-amber-600/80 shadow-sm'
+                        : 'bg-indigo-950/90 text-indigo-300 border-indigo-600/80 shadow-sm'
+                    }`}>
+                      {optionPlay.instrumentType === 'FUTURES_OPTION' ? 'Futures Option (x5)' : 'Equity Option (x100)'}
                     </span>
                     <span className="text-slate-400 text-[11px]">
                       Exp: {optionPlay.expirationDisplay} ({optionPlay.daysToExpiration} DTE)
@@ -347,10 +648,16 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                       ${optionPlay.entry.premium.toFixed(2)}
                     </div>
                     <div className="text-[10px] text-slate-400 mt-0.5">
-                      ${optionPlay.entry.costPerContract}/contract
+                      ${(optionPlay.entry.premium * optionMetrics.multiplier).toFixed(2)}/contract
+                    </div>
+                    <div className="text-[10px] text-amber-300 font-semibold mt-0.5">
+                      Cost: ${(optionPlay.entry.premium * optionMetrics.multiplier * dynamicContractQty).toFixed(2)}
+                      <span className="text-[9px] text-slate-400 font-mono font-normal ml-1">
+                        ({dynamicContractQty} ct{dynamicContractQty > 1 ? 's' : ''})
+                      </span>
                     </div>
                     <div className="text-[9px] text-slate-500 mt-1 pt-1 border-t border-slate-800">
-                      Stock @ ${params.entry.toFixed(2)}
+                      Underlying @ ${params.entry.toFixed(2)}
                     </div>
                   </div>
 
@@ -412,86 +719,345 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                   <span className="text-slate-300">Underlying Trigger: ${params.entry.toFixed(2)}</span>
                 </div>
 
-                {/* 1-Click thinkorswim / Charles Schwab Order Template */}
-                <div className="p-2 rounded bg-slate-950 border border-slate-800 flex items-center justify-between font-mono text-[11px] gap-2">
-                  <div className="truncate text-slate-300 select-all font-semibold">
-                    {optionPlay.schwabOrderCommand}
+                {/* 1-Click thinkorswim & Charles Schwab Options Order Template */}
+                <div className="space-y-2 p-2.5 rounded-lg bg-slate-950 border border-slate-800 font-mono text-[11px]">
+                  <div className="flex items-center justify-between text-[10px] text-slate-400">
+                    <span className="font-semibold text-sky-400 uppercase tracking-wider flex items-center gap-1">
+                      <Terminal className="w-3 h-3 text-sky-400" />
+                      <span>thinkorswim 1st Triggers OCO Bracket ({dynamicContractQty} Contract{dynamicContractQty > 1 ? 's' : ''})</span>
+                    </span>
+                    <span className="text-emerald-400 font-medium">Auto-Sized from Risk Budget</span>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      type="button"
-                      onClick={(e) => handleCopyOrder(optionPlay.schwabWebSummary, `summary-${optionPlay.id}`, e)}
-                      className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-sky-300 border border-slate-700 rounded text-[10px] flex items-center gap-1 transition-colors font-sans cursor-pointer"
-                      title="Copy complete ticket for Charles Schwab portal"
-                    >
-                      {copiedId === `summary-${optionPlay.id}` ? (
-                        <>
-                          <Check className="w-3 h-3 text-emerald-400" />
-                          <span>Copied!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3 h-3" />
-                          <span>Schwab Ticket</span>
-                        </>
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => handleCopyOrder(optionPlay.schwabBracketCommand, `bracket-${optionPlay.id}`, e)}
-                      className="px-2 py-1 bg-sky-600 hover:bg-sky-500 text-white rounded text-[10px] flex items-center gap-1 transition-colors font-sans font-medium cursor-pointer"
-                      title="Copy thinkorswim bracket order"
-                    >
-                      {copiedId === `bracket-${optionPlay.id}` ? (
-                        <>
-                          <Check className="w-3 h-3 text-white" />
-                          <span>Copied!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3 h-3" />
-                          <span>OCO Bracket</span>
-                        </>
-                      )}
-                    </button>
+
+                  {/* Primary Universal Natural Language Compound Bracket Order */}
+                  <div className="p-2 rounded bg-slate-900/90 border border-slate-700/80 flex items-center justify-between gap-2">
+                    <div className="truncate text-sky-200 select-all font-bold text-xs" title="Complete thinkorswim 1st Triggers OCO Compound Bracket Order (Entry / SL / TP)">
+                      {dynamicCompoundTosOptionCommand}
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={(e) => handleCopyOrder(dynamicCompoundTosOptionCommand, `compound-${optionPlay.id}`, e)}
+                        className="px-2.5 py-1 bg-sky-600 hover:bg-sky-500 text-white rounded text-[10px] flex items-center gap-1 transition-colors font-sans font-semibold cursor-pointer shadow-sm"
+                        title="Copy full 1st Triggers OCO compound bracket order (Parent Entry + Stop Loss + Take Profit) for simultaneous 3-leg paste into ThinkorSwim"
+                      >
+                        {copiedId === `compound-${optionPlay.id}` ? (
+                          <>
+                            <Check className="w-3 h-3 text-white" />
+                            <span>Copied TOS Bracket!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3" />
+                            <span>Copy TOS Order</span>
+                          </>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => handleCopyOrder(dynamicNaturalTosCommand, `natural-${optionPlay.id}`, e)}
+                        className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded text-[10px] flex items-center gap-1 transition-colors font-sans cursor-pointer"
+                        title="Copy entry leg only: BUY +N SINGLE..."
+                      >
+                        {copiedId === `natural-${optionPlay.id}` ? (
+                          <>
+                            <Check className="w-3 h-3 text-sky-400" />
+                            <span>Copied Entry!</span>
+                          </>
+                        ) : (
+                          <span>Entry Only</span>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => handleCopyOrder(optionPlay.schwabWebSummary, `summary-${optionPlay.id}`, e)}
+                        className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded text-[10px] flex items-center gap-1 transition-colors font-sans cursor-pointer"
+                        title="Copy complete ticket for Charles Schwab portal"
+                      >
+                        {copiedId === `summary-${optionPlay.id}` ? (
+                          <>
+                            <Check className="w-3 h-3 text-emerald-400" />
+                            <span>Copied!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3" />
+                            <span>Schwab Ticket</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* TOS Contract & Quick Copy Strip */}
+                  <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1 border-t border-slate-800/80 text-[10px]">
+                    <div className="flex items-center gap-1">
+                      <span className="text-slate-500">Contract:</span>
+                      <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300 font-mono font-medium">
+                        {optionPlay.ticker} ${optionPlay.strike} {optionPlay.optionType}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1">
+                      <span className="text-slate-500">Exits:</span>
+                      <button
+                        type="button"
+                        onClick={(e) => handleCopyOrder(optionMetrics.stopPrem.toFixed(2), `sl-${optionPlay.id}`, e)}
+                        className="px-1.5 py-0.5 rounded bg-rose-950/80 hover:bg-rose-900 border border-rose-800 text-rose-300 cursor-pointer font-bold"
+                        title="Copy Hard Stop-Loss premium"
+                      >
+                        {copiedId === `sl-${optionPlay.id}` ? '✓' : `SL: $${optionMetrics.stopPrem.toFixed(2)}`}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => handleCopyOrder(optionPlay.target.tp1.premium.toFixed(2), `tp1-${optionPlay.id}`, e)}
+                        className="px-1.5 py-0.5 rounded bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 cursor-pointer font-bold"
+                        title="Copy TP1 premium (1:2 R:R)"
+                      >
+                        {copiedId === `tp1-${optionPlay.id}` ? '✓' : `TP1: $${optionPlay.target.tp1.premium.toFixed(2)}`}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => handleCopyOrder(optionPlay.target.tp2.premium.toFixed(2), `tp2-${optionPlay.id}`, e)}
+                        className="px-1.5 py-0.5 rounded bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 cursor-pointer font-bold"
+                        title="Copy TP2 premium (Opposing Zone)"
+                      >
+                        {copiedId === `tp2-${optionPlay.id}` ? '✓' : `TP2: $${optionPlay.target.tp2.premium.toFixed(2)}`}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => handleCopyOrder(optionPlay.target.tp3.premium.toFixed(2), `tp3-${optionPlay.id}`, e)}
+                        className="px-1.5 py-0.5 rounded bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 cursor-pointer font-bold"
+                        title="Copy TP3 premium (Trend Runner)"
+                      >
+                        {copiedId === `tp3-${optionPlay.id}` ? '✓' : `TP3: $${optionPlay.target.tp3.premium.toFixed(2)}`}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Single Guaranteed Approach Explainer */}
+                  <div className="p-2.5 rounded bg-emerald-950/30 border border-emerald-800/60 text-[10px] text-emerald-300/90 leading-relaxed space-y-1">
+                    <div className="text-emerald-400 font-semibold flex items-center gap-1.5">
+                      <Check className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+                      <span>Single Verified Approach for Thinkorswim:</span>
+                    </div>
+                    <div className="text-slate-300 pl-4 border-l border-emerald-800/80 space-y-1">
+                      <div>
+                        Click <strong className="text-white bg-sky-900/60 px-1 py-0.5 rounded">Copy TOS Order</strong> above. It copies the full 3-leg compound bracket:
+                        <code className="block mt-0.5 text-sky-300 bg-slate-900 px-1.5 py-0.5 rounded font-mono font-bold select-all break-all">
+                          {dynamicCompoundTosOptionCommand}
+                        </code>
+                      </div>
+                      <div className="text-slate-400 text-[10px]">
+                        {isFuturesContract ? (
+                          <span>CME Futures Options format routes directly to <strong>{optionPlay.ticker}</strong> without 100 deliverable. In Thinkorswim, click the 📋 <strong className="text-white">&quot;Paste order from clipboard&quot;</strong> icon at the bottom-right of Order Entry Tools.</span>
+                        ) : (
+                          <span>The mandatory <strong className="text-white">SINGLE</strong> keyword instructs Thinkorswim to route this as an option contract (never defaulting to common stock shares). In Thinkorswim, click the 📋 <strong className="text-white">&quot;Paste order from clipboard&quot;</strong> icon at the bottom-right of Order Entry Tools.</span>
+                        )}
+                      </div>
+                      <div className="text-sky-300 text-[10px] pt-1">
+                        💡 <strong>Why &quot;Custom OCO&quot; created stock before:</strong> Right-clicking a stock chart/header selects 100 shares of TSLA. To get an option bracket, either:
+                        <ul className="list-disc list-inside mt-0.5 space-y-0.5 text-slate-300">
+                          <li><strong>Way 1:</strong> Paste the option order above, then change the <strong className="text-white">Advanced Order</strong> dropdown to <strong className="text-white">&quot;1st Triggers 2 OCO&quot;</strong>.</li>
+                          <li><strong>Way 2:</strong> In the <strong>Trade → Option Chain</strong> tab, right-click the Ask price for the strike → select <strong className="text-white">&quot;Buy custom&quot; → &quot;with OCO Bracket&quot;</strong>.</li>
+                        </ul>
+                      </div>
+                      <div className="text-amber-300 text-[10px] pt-1 border-t border-emerald-800/60 mt-1">
+                        ⚠️ <strong>Why 1 Entry & 2 Targets appeared (and 0 Stops):</strong>
+                        <ul className="list-disc list-inside mt-0.5 space-y-0.5 text-slate-300">
+                          <li><strong className="text-amber-200">Order type was LMT:</strong> When you add exit rows in TOS, it defaults to <strong className="text-white">LMT</strong>. If not changed to <strong className="text-rose-400">STP</strong>, TOS treats the stop row as a 2nd Target!</li>
+                          <li><strong className="text-amber-200">Contract Math:</strong> Buying 2 contracts allows exiting 2 contracts (e.g. 2 Targets of 1 contract each paired with 2 Stops in <em>1st Triggers 2 OCO</em>). 3 targets requires BUY +3 or more.</li>
+                          <li><strong className="text-amber-200">Waiting Trigger:</strong> Stop orders only become active after the Entry fills; look in TOS under <em>Waiting Trigger</em>.</li>
+                        </ul>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
             ) : (
-              /* STOCK SHARES VIEW */
-              <div className="space-y-2">
-                <div className="grid grid-cols-3 gap-2 p-2.5 bg-slate-950/60 rounded border border-slate-800/80 font-mono text-xs">
-                  <div>
-                    <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">Entry (Limit)</div>
-                    <div className="font-semibold text-sky-400 tabular-nums">
-                      ${params.entry.toFixed(2)}
+              /* STOCK SHARES VIEW (S.E.T. PROTOCOL) */
+              <div className="space-y-2.5">
+                {/* S.E.T. Entry & Stops Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-2.5 bg-slate-950/70 rounded-lg border border-slate-800 font-mono text-xs">
+                  {/* Aggressive Entry */}
+                  <div className="p-1.5 rounded bg-slate-900/60 border border-sky-900/40">
+                    <div className="text-[10px] text-sky-400 font-bold uppercase tracking-wider mb-0.5">
+                      Entry (Proximal)
+                    </div>
+                    <div className="font-bold text-sky-300 text-sm tabular-nums">
+                      ${rec.entry.toFixed(2)}
+                    </div>
+                    <div className="text-[9px] text-slate-400">Outer zone boundary</div>
+                  </div>
+
+                  {/* Conservative 50% Midline */}
+                  <div className="p-1.5 rounded bg-slate-900/60 border border-amber-900/40">
+                    <div className="text-[10px] text-amber-400 font-bold uppercase tracking-wider mb-0.5">
+                      50% Midline (Cons)
+                    </div>
+                    <div className="font-bold text-amber-300 text-sm tabular-nums">
+                      ${(rec.conservativeEntry || rec.entry).toFixed(2)}
+                    </div>
+                    <div className="text-[9px] text-slate-400">Compacted R:R edge</div>
+                  </div>
+
+                  {/* Hard Stop-Loss */}
+                  <div className="p-1.5 rounded bg-slate-900/60 border border-rose-900/40">
+                    <div className="text-[10px] text-rose-400 font-bold uppercase tracking-wider mb-0.5">
+                      Hard SL (Distal)
+                    </div>
+                    <div className="font-bold text-rose-400 text-sm tabular-nums">
+                      ${rec.stopLoss.toFixed(2)}
+                    </div>
+                    <div className="text-[9px] text-rose-400/80">
+                      ±{rec.bufferAtrMultiplier.toFixed(2)}x ATR buff
                     </div>
                   </div>
 
-                  <div>
-                    <div className="text-[10px] text-rose-400/80 uppercase tracking-wider mb-0.5">Stop-Loss (SL)</div>
-                    <div className="font-semibold text-rose-400 tabular-nums">
-                      ${params.stopLoss.toFixed(2)}
+                  {/* Target 2 (Opposing Zone) */}
+                  <div className="p-1.5 rounded bg-slate-900/60 border border-emerald-900/40">
+                    <div className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider mb-0.5">
+                      TP2 (Opposing)
                     </div>
-                    <div className="text-[9px] text-slate-500">
-                      -{rec.bufferAtrMultiplier.toFixed(1)}x ATR buff
+                    <div className="font-bold text-emerald-300 text-sm tabular-nums">
+                      ${rec.takeProfit2.toFixed(2)}
                     </div>
-                  </div>
-
-                  <div>
-                    <div className="text-[10px] text-emerald-400/80 uppercase tracking-wider mb-0.5">Target (TP)</div>
-                    <div className="font-semibold text-emerald-400 tabular-nums">
-                      ${params.target.toFixed(2)}
-                    </div>
-                    <div className="text-[9px] text-slate-500">
-                      +{((Math.abs(params.target - params.entry) / params.entry) * 100).toFixed(1)}%
+                    <div className="text-[9px] text-emerald-400">
+                      TP1: ${rec.takeProfit1.toFixed(2)} (1:2)
                     </div>
                   </div>
                 </div>
 
-                <p className="text-[11px] text-slate-400 leading-relaxed">
+                {/* 3-Bar Reaction Rule Execution Banner */}
+                <div className="px-2.5 py-1.5 rounded bg-amber-950/30 border border-amber-800/40 text-[11px] font-mono text-amber-300/90 flex items-start gap-1.5">
+                  <span className="font-bold text-amber-400 shrink-0">⚡ 3-Bar Rule:</span>
+                  <span>If price consolidates inside base for &gt;3–5 bars without an explosive rejection wick, institutional dominance is absent; flatten trade at breakeven.</span>
+                </div>
+
+                <p className="text-[11px] text-slate-400 leading-relaxed font-sans">
                   {rec.rationale}
                 </p>
+
+                {/* 1-Click thinkorswim / Charles Schwab Stock & Futures Order Template */}
+                <div className="space-y-2 p-2.5 rounded-lg bg-slate-950 border border-slate-800 font-mono text-[11px]">
+                  <div className="flex flex-wrap items-center justify-between gap-1 text-[10px] text-slate-400">
+                    <span className="font-semibold text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+                      <Terminal className="w-3 h-3 text-emerald-400" />
+                      <span>thinkorswim 1st Triggers OCO Bracket ({metrics.shares} {isFuturesContract ? (metrics.shares === 1 ? 'Contract' : 'Contracts') : (metrics.shares === 1 ? 'Share' : 'Shares')})</span>
+                    </span>
+                    <div className="flex items-center gap-2">
+                      {isFuturesContract && (
+                        <span className="text-amber-400 font-bold bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-800/80">
+                          Multiplier: ${isMesContract ? '5.00' : getContractPointValue(ticker).toFixed(2)}/pt ({isMesContract ? '$1.25/tick' : `$${(getContractPointValue(ticker) * 0.25).toFixed(2)}/tick`})
+                        </span>
+                      )}
+                      <span className="text-slate-400 font-medium">Auto-Sized from ${params.riskBudget} Risk</span>
+                    </div>
+                  </div>
+
+                  {/* Primary Order String */}
+                  <div className="p-2 rounded bg-slate-900/90 border border-slate-700/80 flex items-center justify-between gap-2">
+                    <div className="truncate text-emerald-300 select-all font-bold text-xs" title="Complete thinkorswim 1st Triggers OCO Compound Bracket Order (Entry / Stop / Target)">
+                      {dynamicCompoundStockOrFuturesCommand}
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={(e) => handleCopyOrder(dynamicCompoundStockOrFuturesCommand, `stock-cmd-${rec.id}`, e)}
+                        className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[10px] flex items-center gap-1 transition-colors font-sans font-semibold cursor-pointer shadow-sm"
+                        title="Copy complete 1st Triggers OCO compound bracket order (Parent Entry + Child Stop Loss + Child Take Profit) so ThinkorSwim pastes all 3 legs simultaneously"
+                      >
+                        {copiedId === `stock-cmd-${rec.id}` ? (
+                          <>
+                            <Check className="w-3 h-3 text-white" />
+                            <span>Copied TOS Bracket!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3" />
+                            <span>Copy TOS Order</span>
+                          </>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => handleCopyOrder(dynamicStockTosCommand, `stock-entry-${rec.id}`, e)}
+                        className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded text-[10px] flex items-center gap-1 transition-colors font-sans cursor-pointer"
+                        title="Copy entry leg only: BUY +N..."
+                      >
+                        {copiedId === `stock-entry-${rec.id}` ? (
+                          <>
+                            <Check className="w-3 h-3 text-emerald-400" />
+                            <span>Copied Entry!</span>
+                          </>
+                        ) : (
+                          <span>Entry Only</span>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => handleCopyOrder(dynamicStockSchwabSummary, `stock-schwab-${rec.id}`, e)}
+                        className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded text-[10px] flex items-center gap-1 transition-colors font-sans cursor-pointer"
+                        title="Copy complete ticket for Charles Schwab portal"
+                      >
+                        {copiedId === `stock-schwab-${rec.id}` ? (
+                          <>
+                            <Check className="w-3 h-3 text-emerald-400" />
+                            <span>Copied!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3" />
+                            <span>Schwab Ticket</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Quick Targets Copy Strip */}
+                  <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1 border-t border-slate-800/80 text-[10px]">
+                    <div className="flex items-center gap-1">
+                      <span className="text-slate-500">Symbol:</span>
+                      <button
+                        type="button"
+                        onClick={(e) => handleCopyOrder(isFuturesContract && !cleanSym.startsWith('/') ? `/${cleanSym}` : cleanSym, `sym-stock-${rec.id}`, e)}
+                        className="px-1.5 py-0.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 cursor-pointer font-mono font-bold"
+                        title="Copy symbol only"
+                      >
+                        {copiedId === `sym-stock-${rec.id}` ? '✓ Copied' : isFuturesContract && !cleanSym.startsWith('/') ? `/${cleanSym}` : cleanSym}
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <span className="text-slate-500">Bracket:</span>
+                      <button
+                        type="button"
+                        onClick={(e) => handleCopyOrder(params.entry.toFixed(2), `ent-stk-${rec.id}`, e)}
+                        className="px-1.5 py-0.5 rounded bg-sky-950/80 hover:bg-sky-900 border border-sky-800 text-sky-300 cursor-pointer font-bold"
+                        title="Copy Entry limit price"
+                      >
+                        {copiedId === `ent-stk-${rec.id}` ? '✓' : `LMT: $${params.entry.toFixed(2)}`}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => handleCopyOrder(params.stopLoss.toFixed(2), `sl-stk-${rec.id}`, e)}
+                        className="px-1.5 py-0.5 rounded bg-rose-950/80 hover:bg-rose-900 border border-rose-800 text-rose-300 cursor-pointer font-bold"
+                        title="Copy Stop-Loss price"
+                      >
+                        {copiedId === `sl-stk-${rec.id}` ? '✓' : `SL: $${params.stopLoss.toFixed(2)}`}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => handleCopyOrder(params.target.toFixed(2), `tp-stk-${rec.id}`, e)}
+                        className="px-1.5 py-0.5 rounded bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 cursor-pointer font-bold"
+                        title="Copy Target price"
+                      >
+                        {copiedId === `tp-stk-${rec.id}` ? '✓' : `TP: $${params.target.toFixed(2)}`}
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -755,10 +1321,10 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                     <div className="p-2 rounded bg-slate-950 border border-slate-800/90">
                       <div className="text-[10px] text-slate-400">Position Size:</div>
                       <div className="text-slate-100 font-bold text-xs mt-0.5">
-                        {viewMode === 'options' ? `${optionMetrics.contracts} Option Contracts` : `${metrics.shares} Shares`}
+                        {viewMode === 'options' ? `${optionMetrics.contracts} Option Contracts` : isFuturesContract ? `${metrics.shares} Contracts` : `${metrics.shares} Shares`}
                       </div>
                       <div className="text-[9px] text-slate-500 mt-0.5">
-                        {viewMode === 'options' ? `Total Cost: $${optionMetrics.totalOptionCost.toLocaleString()}` : `Capital: $${metrics.capitalRequired.toLocaleString()}`}
+                        {viewMode === 'options' ? `Total Cost: $${optionMetrics.totalOptionCost.toLocaleString()}` : isFuturesContract ? `Margin Req: ~$${metrics.capitalRequired.toLocaleString()}` : `Capital: $${metrics.capitalRequired.toLocaleString()}`}
                       </div>
                     </div>
 
@@ -778,7 +1344,7 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                         -${viewMode === 'options' ? optionMetrics.totalOptionRisk.toFixed(2) : metrics.totalRiskDollars.toFixed(2)}
                       </div>
                       <div className="text-[9px] text-rose-400/70 mt-0.5">
-                        {viewMode === 'options' ? `-$${optionMetrics.riskPerContract.toFixed(0)}/contract` : `-$${metrics.risk.toFixed(2)}/share`}
+                        {viewMode === 'options' ? `-$${optionMetrics.riskPerContract.toFixed(0)}/contract` : isFuturesContract ? `-$${(metrics.totalRiskDollars / Math.max(1, metrics.shares)).toFixed(2)}/contract` : `-$${metrics.risk.toFixed(2)}/share`}
                       </div>
                     </div>
 
@@ -788,7 +1354,7 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                         +${viewMode === 'options' ? optionMetrics.totalOptionReward.toFixed(2) : metrics.totalRewardDollars.toFixed(2)}
                       </div>
                       <div className="text-[9px] text-emerald-400/70 mt-0.5">
-                        {viewMode === 'options' ? `+$${optionMetrics.rewardPerContract.toFixed(0)}/contract` : `+$${metrics.reward.toFixed(2)}/share`}
+                        {viewMode === 'options' ? `+$${optionMetrics.rewardPerContract.toFixed(0)}/contract` : isFuturesContract ? `+$${(metrics.totalRewardDollars / Math.max(1, metrics.shares)).toFixed(2)}/contract` : `+$${metrics.reward.toFixed(2)}/share`}
                       </div>
                     </div>
                   </div>
@@ -863,9 +1429,16 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                     e.stopPropagation();
                     onSimulateOrder(effectiveRec);
                   }}
-                  className="px-2 py-1 text-[11px] font-medium text-emerald-300 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-800/80 rounded transition-colors cursor-pointer"
+                  className={`px-2 py-1 text-[11px] font-medium rounded transition-colors cursor-pointer ${
+                    isDormant
+                      ? 'text-amber-300 bg-amber-950/80 hover:bg-amber-900 border border-amber-700/80 font-bold'
+                      : rec.proximityPhase?.includes('Phase B')
+                      ? 'text-emerald-300 bg-emerald-950/90 hover:bg-emerald-900 border border-emerald-500 font-bold shadow-sm shadow-emerald-900'
+                      : 'text-emerald-300 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-800/80'
+                  }`}
+                  title={isDormant ? "Price is dormant in no-man's land (>1.5x ATR away). Kept staged until price retests the proximal line." : "Arm OCO bracket order"}
                 >
-                  Stage Trade
+                  {isDormant ? '⏸ Staged (Awaiting Retest)' : rec.proximityPhase?.includes('Phase B') ? '🔥 Arm Order' : 'Stage Trade'}
                 </button>
               </div>
             </div>

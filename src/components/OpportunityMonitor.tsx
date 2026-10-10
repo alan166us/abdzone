@@ -17,7 +17,9 @@ import {
   generateTradeRecommendations 
 } from '../utils/tradeEngine';
 import { 
-  generateSchwabOptionPlay 
+  generateSchwabOptionPlay,
+  formatTosNaturalOptionCommand,
+  formatTosOptionCommand
 } from '../utils/optionsEngine';
 import { 
   generateSyntheticMarketData 
@@ -222,12 +224,16 @@ export const OpportunityMonitor: React.FC<OpportunityMonitorProps> = ({
     // Generate Option Specifications if applicable
     let optionStrike: number | undefined;
     let optionExp: string | undefined;
+    let optionTosExp: string | undefined;
+    let optionDotSymbol: string | undefined;
     let optionPremium: number | undefined;
 
     if (closestRec) {
       const optionPlay = generateSchwabOptionPlay(closestRec, cleanSym, volMetrics);
       optionStrike = optionPlay.strike;
       optionExp = optionPlay.expirationDisplay;
+      optionTosExp = optionPlay.tosExpirationStr;
+      optionDotSymbol = optionPlay.tosDotSymbol;
       optionPremium = optionPlay.entry.premium;
 
       if (cleanSym.startsWith('/')) {
@@ -259,6 +265,8 @@ export const OpportunityMonitor: React.FC<OpportunityMonitorProps> = ({
       lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       optionStrike,
       optionExp,
+      optionTosExp,
+      optionDotSymbol,
       optionPremium,
     };
   }, []);
@@ -372,13 +380,36 @@ export const OpportunityMonitor: React.FC<OpportunityMonitorProps> = ({
     });
   }, [opportunities, statusFilter]);
 
-  // Copy thinkorswim bracket order
+  // Copy thinkorswim order command (strictly formatted for TOS clipboard parser)
   const handleCopyTos = (opp: MonitoredOpportunity, e: React.MouseEvent) => {
     e.stopPropagation();
-    const isCall = opp.signalType === 'CALL / LONG';
-    const optType = isCall ? 'CALL' : 'PUT';
-    const cleanSym = opp.symbol.replace('/', '');
-    const tosCommand = `BUY +1 ${cleanSym} 100 (${optType}) @${(opp.optionPremium || 3.50).toFixed(2)} LMT [1st Triggers OCO: LIMIT @ ${(opp.targetPrice * 0.05 + (opp.optionPremium || 3.5)).toFixed(2)} / STOP @ ${(opp.stopLoss * 0.03).toFixed(2)}]`;
+    const isFutures = opp.category === 'Future' || opp.symbol.startsWith('/') || opp.symbol.includes('MES');
+    const isLong = opp.signalType === 'CALL / LONG';
+    let tosCommand = '';
+
+    if (isFutures) {
+      const actualSym = opp.symbol.startsWith('/') ? opp.symbol : `/${opp.symbol}`;
+      const action = isLong ? 'BUY' : 'SELL';
+      const signQty = isLong ? '+1' : '-1';
+      tosCommand = `${action} ${signQty} ${actualSym} @${opp.entryPrice.toFixed(2)} LMT`;
+    } else {
+      const optType = isLong ? 'CALL' : 'PUT';
+      const cleanSym = opp.symbol.replace('/', '').toUpperCase();
+      // Universal natural order format with SINGLE keyword accepted by thinkorswim desktop
+      if (opp.optionTosExp && opp.optionStrike) {
+        tosCommand = formatTosNaturalOptionCommand(
+          cleanSym,
+          opp.optionTosExp,
+          opp.optionStrike,
+          optType,
+          opp.optionPremium || 3.50,
+          1
+        );
+      } else {
+        tosCommand = `BUY +1 SINGLE ${cleanSym} 100 ${opp.optionExp || '17 OCT 25'} ${opp.optionStrike || 100} ${optType} @${(opp.optionPremium || 3.50).toFixed(2)} LMT`;
+      }
+    }
+
     navigator.clipboard.writeText(tosCommand);
     setCopiedId(opp.symbol);
     setTimeout(() => setCopiedId(null), 2000);

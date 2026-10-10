@@ -2,11 +2,13 @@ import { TradeRecommendation, VolatilityMetrics } from '../types/trading';
 
 export type ExpirationStyle = 'weekly' | 'swing' | 'monthly';
 export type StrikeBias = 'ITM' | 'ATM' | 'OTM';
+export type InstrumentType = 'EQUITY_OPTION' | 'FUTURES_OPTION';
 
 export interface SchwabOptionContractRecommendation {
   id: string;
   side: 'long' | 'short';
   optionType: 'CALL' | 'PUT';
+  instrumentType: InstrumentType;
   ticker: string;
   underlyingPrice: number;
   strike: number;
@@ -17,11 +19,12 @@ export interface SchwabOptionContractRecommendation {
   occSymbol: string;
   daysToExpiration: number;
   expirationStyle: ExpirationStyle;
+  pointMultiplier: number; // e.g. 5.0 for /MES, 100 for equity options
 
   // 1. ENTRY SPECIFICATIONS
   entry: {
-    premium: number;           // $/share (e.g. 3.45)
-    costPerContract: number;   // $345
+    premium: number;           // $/pt or $/share (e.g. 3.45)
+    costPerContract: number;   // $345 for equity, or $5*premium for /MES
     orderType: 'LIMIT';
     underlyingTrigger: number; // e.g. 574.20
     action: 'Buy to Open';
@@ -97,6 +100,7 @@ export interface SchwabOptionContractRecommendation {
   };
   tosDotSymbol: string; // e.g. .SPY251017C575
   tosVerifiedSingleCommand: string; // e.g. BUY +1 .SPY251017C575 @3.45 LMT
+  tosNaturalCommand: string; // e.g. BUY +1 SPY 100 17 OCT 25 575 CALL @3.45 LMT (Universal TOS parser format)
   schwabOrderCommand: string; // thinkorswim 1-line format
   schwabBracketCommand: string; // thinkorswim 1st triggers OCO format
   schwabWebSummary: string; // Human-readable clipboard string for Schwab.com
@@ -165,13 +169,52 @@ function getExpirationDetails(style: ExpirationStyle = 'swing'): {
 }
 
 /**
+ * Calculates contract multiplier / point value.
+ * For /MES (Micro E-mini S&P): $5.00/point ($1.25/tick)
+ * For /MNQ (Micro E-mini Nasdaq): $2.00/point ($0.50/tick)
+ * For /ES (E-mini S&P): $50.00/point ($12.50/tick)
+ * For /NQ (E-mini Nasdaq): $20.00/point ($5.00/tick)
+ * For /RTY (Russell 2000): $50.00/point ($5.00/tick)
+ * For /CL (Crude Oil): $1000.00/point ($10.00/cent)
+ * For /GC (Gold): $100.00/point ($10.00/0.10)
+ * Standard equity options deliverable: 100 shares per contract
+ */
+export function getContractPointValue(ticker: string): number {
+  const clean = ticker.trim().toUpperCase();
+  if (clean.startsWith('/') || clean === 'MES' || clean.includes('MES')) return 5.0; // $5.00/point ($1.25/tick) for /MES and futures options
+  if (clean.includes('MNQ')) return 2.0; // $2.00/point ($0.50/tick)
+  if (clean.includes('/ES') || clean === 'ES') return 50.0; // $50.00/point ($12.50/tick)
+  if (clean.includes('/NQ') || clean === 'NQ') return 20.0; // $20.00/point ($5.00/tick)
+  if (clean.includes('/RTY') || clean === 'RTY') return 50.0; // $50.00/point
+  if (clean.includes('/CL') || clean === 'CL') return 1000.0; // $1,000.00/point
+  if (clean.includes('/GC') || clean === 'GC') return 100.0; // $100.00/point
+  return 100.0; // 100 shares per equity contract
+}
+
+/**
  * Constructs standard OCC Option Symbol (e.g. SPY   251017C00575000)
+ * or CME Futures Option Symbol for /MES (e.g. /MS261023C5800)
  */
 function formatOccSymbol(ticker: string, expIso: string, type: 'CALL' | 'PUT', strike: number): string {
-  const cleanTicker = ticker.padEnd(6, ' ').slice(0, 6);
+  const clean = ticker.trim().toUpperCase();
+  const isFutures = clean.startsWith('/') || clean.includes('MES') || clean.includes('ES') || clean.includes('NQ') || clean.includes('MNQ');
   const [yyyy, mm, dd] = expIso.split('-');
   const yy = yyyy.slice(-2);
   const typeLetter = type === 'CALL' ? 'C' : 'P';
+
+  if (isFutures) {
+    // CME Futures Options OCC format: e.g. /MS261023C5800 for /MES or /MS[EXP][C/P][STRIKE]
+    let root = '/MS';
+    if (clean.includes('MES')) root = '/MS';
+    else if (clean.includes('MNQ')) root = '/MQ';
+    else if (clean.includes('/ES') || clean === 'ES') root = '/ES';
+    else if (clean.includes('/NQ') || clean === 'NQ') root = '/NQ';
+    else if (clean.startsWith('/')) root = clean;
+    else root = `/${clean}`;
+    return `${root}${yy}${mm}${dd}${typeLetter}${strike}`;
+  }
+
+  const cleanTicker = clean.padEnd(6, ' ').slice(0, 6);
   const strikeFormatted = String(Math.round(strike * 1000)).padStart(8, '0');
   return `${cleanTicker}${yy}${mm}${dd}${typeLetter}${strikeFormatted}`;
 }
@@ -193,7 +236,8 @@ export function generateSchwabOptionPlay(
   const strikeBias = options?.strikeBias || 'ITM';
 
   const isCall = rec.side === 'long';
-  const cleanTicker = ticker.replace(/^(SCHWAB:|EXCHANGE:)/, '').trim().toUpperCase();
+  const rawTicker = ticker || rec.symbol || 'SPY';
+  const cleanTicker = rawTicker.replace(/^(SCHWAB:|EXCHANGE:)/, '').trim().toUpperCase();
   const underlying = rec.entry;
   const increment = getStrikeIncrement(underlying);
 
@@ -250,7 +294,12 @@ export function generateSchwabOptionPlay(
   // Calculate Entry Premium
   const rawEntry = intrinsicValue + timeValue;
   const entryPremium = Number(Math.max(0.85, Math.min(rawEntry, underlying * 0.12)).toFixed(2));
-  const costPerContract = Math.round(entryPremium * 100);
+  
+  const isFutures = cleanTicker.startsWith('/') || cleanTicker === 'MES' || cleanTicker.includes('MES');
+  const instrumentType: InstrumentType = isFutures ? 'FUTURES_OPTION' : 'EQUITY_OPTION';
+  const actualTicker = isFutures ? (cleanTicker.startsWith('/') ? cleanTicker : `/${cleanTicker}`) : cleanTicker;
+  const pointMultiplier = isFutures ? 5.0 : 100.0;
+  const costPerContract = Math.round(entryPremium * pointMultiplier);
 
   // Projected stock moves from zone geometry
   const underlyingTargetMove = Math.abs(rec.takeProfit2 - rec.entry);
@@ -268,14 +317,14 @@ export function generateSchwabOptionPlay(
     orderType: 'LIMIT' as const,
     underlyingTrigger: rec.entry,
     action: 'Buy to Open' as const,
-    description: `Limit buy order placed at $${entryPremium.toFixed(2)} when ${cleanTicker} enters the zone at $${rec.entry.toFixed(2)}.`,
+    description: `Limit buy order placed at $${entryPremium.toFixed(2)} when ${actualTicker} enters the zone at $${rec.entry.toFixed(2)}.`,
   };
 
   // 2. STOP-LOSS
   // Stop is set when underlying hits the buffered zone boundary (SL), modeling contract value at that point
   const calculatedStopPremium = Math.max(0.25, entryPremium - optionStopDecline);
   const stopPremium = Number(calculatedStopPremium.toFixed(2));
-  const stopLossPerContract = Number((entryPremium - stopPremium).toFixed(2)) * 100;
+  const stopLossPerContract = Number(((entryPremium - stopPremium) * pointMultiplier).toFixed(2));
   const stopPercentLoss = Math.round(((entryPremium - stopPremium) / entryPremium) * 100);
 
   const stopLoss = {
@@ -285,24 +334,24 @@ export function generateSchwabOptionPlay(
     orderType: 'STOP' as const,
     underlyingTrigger: rec.stopLoss,
     action: 'Sell to Close' as const,
-    description: `Exit contract immediately if option falls to $${stopPremium.toFixed(2)} or ${cleanTicker} violates buffered stop at $${rec.stopLoss.toFixed(2)}.`,
+    description: `Exit contract immediately if option falls to $${stopPremium.toFixed(2)} or ${actualTicker} violates buffered stop at $${rec.stopLoss.toFixed(2)}.`,
   };
 
   // 3. TARGET (TP)
   const calculatedTargetPremium = Math.max(entryPremium * 1.35, entryPremium + optionTargetGain);
   const targetPremium = Number(calculatedTargetPremium.toFixed(2));
-  const profitPerContract = Math.round((targetPremium - entryPremium) * 100);
+  const profitPerContract = Math.round((targetPremium - entryPremium) * pointMultiplier);
   const targetPercentGain = Math.round(((targetPremium - entryPremium) / entryPremium) * 100);
 
   // Multi-targets
   const tp1StockMove = Math.abs(rec.takeProfit1 - rec.entry);
   const tp1Premium = Number(Math.max(entryPremium * 1.25, entryPremium + tp1StockMove * Math.abs(approxDelta)).toFixed(2));
-  const tp1Profit = Math.round((tp1Premium - entryPremium) * 100);
+  const tp1Profit = Math.round((tp1Premium - entryPremium) * pointMultiplier);
   const tp1Percent = Math.round(((tp1Premium - entryPremium) / entryPremium) * 100);
 
   const tp3StockMove = Math.abs(rec.takeProfit3 - rec.entry);
   const tp3Premium = Number(Math.max(targetPremium * 1.35, entryPremium + tp3StockMove * Math.abs(approxDelta) * 1.25).toFixed(2));
-  const tp3Profit = Math.round((tp3Premium - entryPremium) * 100);
+  const tp3Profit = Math.round((tp3Premium - entryPremium) * pointMultiplier);
   const tp3Percent = Math.round(((tp3Premium - entryPremium) / entryPremium) * 100);
 
   const optionRR = stopLossPerContract > 0 ? Number((profitPerContract / stopLossPerContract).toFixed(1)) : 2.5;
@@ -339,66 +388,85 @@ export function generateSchwabOptionPlay(
   };
 
   const optionTypeStr = isCall ? 'CALL' : 'PUT';
-  const occSymbol = formatOccSymbol(cleanTicker, expIso, optionTypeStr, strike);
+  const occSymbol = formatOccSymbol(actualTicker, expIso, optionTypeStr, strike);
 
-  const isFutures = cleanTicker.startsWith('/');
   const [yyyy, mm, dd] = expIso.split('-');
   const yy = yyyy.slice(-2);
   const typeLetter = optionTypeStr === 'CALL' ? 'C' : 'P';
-  const tosDotSymbol = isFutures ? cleanTicker : `.${cleanTicker}${yy}${mm}${dd}${typeLetter}${strike}`;
+  const tosDotSymbol = isFutures ? actualTicker : `.${cleanTicker}${yy}${mm}${dd}${typeLetter}${strike}`;
 
-  // thinkorswim Single Limit Order (strictly formatted for thinkorswim desktop clipboard parser: no space after @)
+  // thinkorswim Single Limit Order
   const tosVerifiedSingleCommand = isFutures
     ? (isCall
-        ? `BUY +1 ${cleanTicker} @${rec.entry.toFixed(2)} LMT`
-        : `SELL +1 ${cleanTicker} @${rec.entry.toFixed(2)} LMT`)
+        ? `BUY +1 ${actualTicker} @${rec.entry.toFixed(2)} LMT`
+        : `SELL +1 ${actualTicker} @${rec.entry.toFixed(2)} LMT`)
     : `BUY +1 ${tosDotSymbol} @${entryPremium.toFixed(2)} LMT`;
 
-  // Legacy single order string
-  const schwabOrderCommand = tosVerifiedSingleCommand;
+  // thinkorswim Natural Language Order Command
+  // For futures options: CME format "/MES [EXP] [STRIKE] [CALL/PUT]" without "100" deliverable
+  // For equity options: "BUY +1 SINGLE [TICKER] 100 [EXP] [STRIKE] [CALL/PUT]"
+  const tosNaturalCommand = formatTosNaturalOptionCommand(
+    actualTicker,
+    tosStr,
+    strike,
+    optionTypeStr,
+    entryPremium,
+    1
+  );
 
-  // thinkorswim 1st Triggers OCO Bracket Order (Entry -> Stop Loss & Take Profit)
-  const schwabBracketCommand = isFutures
-    ? (isCall
-        ? `BUY 1 ${cleanTicker} @ ${rec.entry.toFixed(2)} LMT; SELL 1 ${cleanTicker} @ ${rec.takeProfit2.toFixed(2)} LMT / @ ${rec.stopLoss.toFixed(2)} STP`
-        : `SELL 1 ${cleanTicker} @ ${rec.entry.toFixed(2)} LMT; BUY 1 ${cleanTicker} @ ${rec.takeProfit2.toFixed(2)} LMT / @ ${rec.stopLoss.toFixed(2)} STP`)
-    : `BUY +1 ${cleanTicker} 100 ${tosStr} ${strike} ${optionTypeStr} @ ${entryPremium.toFixed(2)} LMT; SELL -1 ${cleanTicker} 100 ${tosStr} ${strike} ${optionTypeStr} @ ${targetPremium.toFixed(2)} LMT / @ ${stopPremium.toFixed(2)} STP`;
+  const schwabOrderCommand = tosNaturalCommand;
+
+  // Complete ThinkorSwim 1st Triggers OCO Compound Bracket String (3 legs separated by /)
+  const schwabBracketCommand = formatTosCompoundOptionBracketCommand(
+    actualTicker,
+    tosStr,
+    strike,
+    optionTypeStr,
+    entryPremium,
+    stopPremium,
+    targetPremium,
+    1
+  );
 
   // Clean Schwab Portal Summary Slip for copy/paste into Schwab.com
   const schwabWebSummary = isFutures
     ? [
-        `=== CHARLES SCHWAB / THINKORSWIM FUTURES ORDER ===`,
-        `CONTRACT: ${cleanTicker}`,
-        `ACTION: ${isCall ? 'BUY (Long)' : 'SELL (Short)'}`,
-        `ORDER TYPE: Limit with OCO Bracket`,
+        `=== CHARLES SCHWAB / THINKORSWIM FUTURES OPTIONS TICKET ===`,
+        `CONTRACT:      ${actualTicker} ${expDisplay} $${strike} ${optionTypeStr}`,
+        `ACTION:        Buy to Open`,
+        `ORDER TYPE:    Limit with OCO Bracket`,
+        `MULTIPLIER:    $${pointMultiplier.toFixed(2)}/point ($1.25/tick)`,
         `-----------------------------------------`,
-        `1. ENTRY LIMIT:       $${rec.entry.toFixed(2)}`,
-        `2. STOP-LOSS (SL):    $${rec.stopLoss.toFixed(2)} (with ATR buffer)`,
-        `3. TARGET (TP):       $${rec.takeProfit2.toFixed(2)} (Opposing Zone)`,
+        `1. ENTRY LIMIT:       $${entryPremium.toFixed(2)} ($${costPerContract}/contract) [Futures Trigger: $${rec.entry.toFixed(2)}]`,
+        `2. STOP-LOSS (SL):    $${stopPremium.toFixed(2)} (-$${Math.abs(stopLoss.lossPerContract)}/contract, ${stopLoss.percentLoss}%) [Futures Trigger: $${rec.stopLoss.toFixed(2)}]`,
+        `3. TARGET (TP):       $${targetPremium.toFixed(2)} (+$${profitPerContract}/contract, +${targetPercentGain}%) [Futures Target: $${rec.takeProfit2.toFixed(2)}]`,
         `-----------------------------------------`,
-        `RISK / REWARD: 1 : ${rec.riskRewardRatio.toFixed(1)}`,
+        `RISK / REWARD: 1 : ${optionRR} | DELTA: ${approxDelta}`,
+        `CME/OCC SYMBOL: ${occSymbol}`,
       ].join('\n')
     : [
         `=== CHARLES SCHWAB OPTION TRADE ORDER ===`,
-        `TICKER: ${cleanTicker}`,
-        `STRATEGY: Buy Single Option (${strikeBias})`,
-        `CONTRACT: ${cleanTicker} ${expDisplay} $${strike} ${optionTypeStr}`,
-        `ACTION: Buy to Open`,
-        `ORDER TYPE: Limit`,
+        `TICKER:        ${cleanTicker}`,
+        `STRATEGY:      Buy Single Option (${strikeBias})`,
+        `CONTRACT:      ${cleanTicker} ${expDisplay} $${strike} ${optionTypeStr}`,
+        `ACTION:        Buy to Open`,
+        `ORDER TYPE:    Limit with OCO Bracket`,
+        `MULTIPLIER:    100 shares/contract`,
         `-----------------------------------------`,
         `1. ENTRY LIMIT:       $${entryPremium.toFixed(2)} ($${costPerContract}/contract) [Stock Trigger: $${rec.entry.toFixed(2)}]`,
         `2. STOP-LOSS (SL):    $${stopPremium.toFixed(2)} (-$${Math.abs(stopLoss.lossPerContract)}/contract, ${stopLoss.percentLoss}%) [Stock Trigger: $${rec.stopLoss.toFixed(2)}]`,
         `3. TARGET (TP):       $${targetPremium.toFixed(2)} (+$${profitPerContract}/contract, +${targetPercentGain}%) [Stock Target: $${rec.takeProfit2.toFixed(2)}]`,
         `-----------------------------------------`,
         `RISK / REWARD: 1 : ${optionRR} | DELTA: ${approxDelta}`,
-        `OCC SYMBOL: ${occSymbol}`,
+        `OCC SYMBOL:    ${occSymbol}`,
       ].join('\n');
 
   return {
     id: `opt-${rec.id}-${expirationStyle}-${strikeBias}`,
     side: rec.side,
     optionType: optionTypeStr,
-    ticker: cleanTicker,
+    instrumentType,
+    ticker: actualTicker,
     underlyingPrice: underlying,
     strike,
     strikeBias,
@@ -408,6 +476,7 @@ export function generateSchwabOptionPlay(
     occSymbol,
     daysToExpiration,
     expirationStyle,
+    pointMultiplier,
     entry,
     stopLoss,
     target,
@@ -431,6 +500,7 @@ export function generateSchwabOptionPlay(
     },
     tosDotSymbol,
     tosVerifiedSingleCommand,
+    tosNaturalCommand,
     schwabOrderCommand,
     schwabBracketCommand,
     schwabWebSummary,
@@ -438,4 +508,296 @@ export function generateSchwabOptionPlay(
       ? `Institutional Demand Zone at $${rec.entry.toFixed(2)} provides strong reversal tailwinds. Buying ${strike} Strike Call ($${entryPremium.toFixed(2)}/sh). Target $${targetPremium.toFixed(2)} (+${targetPercentGain}%) when stock reaches $${rec.takeProfit2.toFixed(2)}. Invalidate at $${stopPremium.toFixed(2)} if stock pierces $${rec.stopLoss.toFixed(2)}.`
       : `Institutional Supply Zone at $${rec.entry.toFixed(2)} defends strong resistance. Buying ${strike} Strike Put ($${entryPremium.toFixed(2)}/sh). Target $${targetPremium.toFixed(2)} (+${targetPercentGain}%) when stock drops to $${rec.takeProfit2.toFixed(2)}. Invalidate at $${stopPremium.toFixed(2)} if stock pierces $${rec.stopLoss.toFixed(2)}.`,
   };
+}
+
+/**
+ * Formats a verified thinkorswim option limit command with custom contract quantity
+ */
+export function formatTosOptionCommand(tosDotSymbol: string, premium: number, qty: number = 1): string {
+  const signQty = qty >= 0 ? `+${qty}` : `${qty}`;
+  return `BUY ${signQty} ${tosDotSymbol} @${premium.toFixed(2)} LMT`;
+}
+
+/**
+ * Formats a universal thinkorswim natural language option order
+ * (e.g. BUY +1 SINGLE IREN 100 23 OCT 26 37.5 PUT @3.25 LMT)
+ * CRITICAL: Thinkorswim desktop "Paste order from clipboard" requires "SINGLE"
+ * immediately after the quantity (+1, +2, etc.) to identify a single-leg option contract.
+ * Without "SINGLE", thinkorswim parses the ticker as common stock (BUY +2 IREN),
+ * discarding the expiration and strike, and populating the order entry with shares of STOCK!
+ */
+export function formatTosNaturalOptionCommand(
+  ticker: string,
+  tosExpirationStr: string,
+  strike: number,
+  optionType: 'CALL' | 'PUT',
+  premium: number,
+  qty: number = 1
+): string {
+  const signQty = qty >= 0 ? `+${qty}` : `${qty}`;
+  const cleanTicker = ticker.trim().toUpperCase();
+  const isFutures = cleanTicker.startsWith('/') || cleanTicker.includes('MES') || cleanTicker.includes('ES') || cleanTicker.includes('NQ') || cleanTicker.includes('MNQ');
+  const actualSym = isFutures ? (cleanTicker.startsWith('/') ? cleanTicker : `/${cleanTicker}`) : cleanTicker.replace('/', '');
+  
+  if (isFutures) {
+    // CME Futures Options format: /MES [EXP] [STRIKE] [CALL/PUT] (no "100" deliverable, no equity format)
+    return `BUY ${signQty} ${actualSym} ${tosExpirationStr} ${strike} ${optionType} @${premium.toFixed(2)} LMT`;
+  }
+
+  return `BUY ${signQty} SINGLE ${actualSym} 100 ${tosExpirationStr} ${strike} ${optionType} @${premium.toFixed(2)} LMT`;
+}
+
+/**
+ * Formats a universal thinkorswim natural language option exit order (Target Limit or Stop-Loss Stop)
+ * (e.g. SELL -1 SINGLE TSLA 100 23 OCT 26 541 PUT @3.50 LMT or SELL -2 SINGLE TSLA 100 23 OCT 26 541 PUT @0.45 STP)
+ */
+export function formatTosNaturalOptionExitCommand(
+  ticker: string,
+  tosExpirationStr: string,
+  strike: number,
+  optionType: 'CALL' | 'PUT',
+  premium: number,
+  orderType: 'LMT' | 'STP' = 'LMT',
+  qty: number = 1
+): string {
+  const signQty = qty > 0 ? `-${qty}` : `${qty}`;
+  const cleanTicker = ticker.trim().toUpperCase();
+  const isFutures = cleanTicker.startsWith('/') || cleanTicker.includes('MES') || cleanTicker.includes('ES') || cleanTicker.includes('NQ') || cleanTicker.includes('MNQ');
+  const actualSym = isFutures ? (cleanTicker.startsWith('/') ? cleanTicker : `/${cleanTicker}`) : cleanTicker.replace('/', '');
+
+  if (isFutures) {
+    // CME Futures Options exit format: /MES [EXP] [STRIKE] [CALL/PUT]
+    return `SELL ${signQty} ${actualSym} ${tosExpirationStr} ${strike} ${optionType} @${premium.toFixed(2)} ${orderType}`;
+  }
+
+  return `SELL ${signQty} SINGLE ${actualSym} 100 ${tosExpirationStr} ${strike} ${optionType} @${premium.toFixed(2)} ${orderType}`;
+}
+
+/**
+ * Formats a complete thinkorswim 1st Triggers OCO Compound Bracket Order for Outright Futures or Stock
+ * For Futures (/MES): BUY +1 /MES LMT [entryPrice] [TIF=DAY] / SELL +1 /MES STP [stopPrice] [TIF=GTC] / SELL +1 /MES LMT [targetPrice] [TIF=GTC]
+ * For Stock (SPY):   BUY +100 SPY LMT [entryPrice] [TIF=DAY] / SELL +100 SPY STP [stopPrice] [TIF=GTC] / SELL +100 SPY LMT [targetPrice] [TIF=GTC]
+ */
+export function formatTosCompoundStockOrFuturesBracketCommand(
+  symbol: string,
+  side: 'long' | 'short',
+  qty: number,
+  entryPrice: number,
+  stopPrice: number,
+  targetPrice: number
+): string {
+  const cleanSym = symbol.trim().toUpperCase();
+  const isFutures = cleanSym.startsWith('/') || cleanSym.includes('MES') || cleanSym.includes('ES') || cleanSym.includes('NQ') || cleanSym.includes('MNQ');
+  const actualSym = isFutures ? (cleanSym.startsWith('/') ? cleanSym : `/${cleanSym}`) : cleanSym;
+  const isLong = side === 'long';
+  const entryAction = isLong ? 'BUY' : 'SELL';
+  const entrySignQty = isLong ? `+${qty}` : `-${qty}`;
+  const exitAction = isLong ? 'SELL' : 'BUY';
+  const exitSignQty = `+${qty}`;
+
+  return `${entryAction} ${entrySignQty} ${actualSym} LMT ${entryPrice.toFixed(2)} [TIF=DAY] / ${exitAction} ${exitSignQty} ${actualSym} STP ${stopPrice.toFixed(2)} [TIF=GTC] / ${exitAction} ${exitSignQty} ${actualSym} LMT ${targetPrice.toFixed(2)} [TIF=GTC]`;
+}
+
+/**
+ * Formats a complete thinkorswim 1st Triggers OCO Compound Bracket Order for Options
+ * BUY +Qty [Symbol] @Entry LMT [1st Triggers OCO: SELL -Qty [Symbol] @TP LMT, SELL -Qty [Symbol] @SL STP]
+ * For Futures Options (/MES): BUY +1 /MES 23 OCT 26 5800 CALL @42.50 LMT [1st Triggers OCO: SELL -1 /MES 23 OCT 26 5800 CALL @65.00 LMT, SELL -1 /MES 23 OCT 26 5800 CALL @25.00 STP]
+ * For Equity Options (SPY):  BUY +1 SINGLE SPY 100 23 OCT 26 575 CALL @3.45 LMT [1st Triggers OCO: SELL -1 SINGLE SPY 100 23 OCT 26 575 CALL @6.50 LMT, SELL -1 SINGLE SPY 100 23 OCT 26 575 CALL @2.10 STP]
+ */
+export function formatTosCompoundOptionBracketCommand(
+  ticker: string,
+  tosExpirationStr: string,
+  strike: number,
+  optionType: 'CALL' | 'PUT',
+  entryPremium: number,
+  stopPremium: number,
+  targetPremium: number,
+  qty: number = 1
+): string {
+  const cleanTicker = ticker.trim().toUpperCase();
+  const isFutures = cleanTicker.startsWith('/') || cleanTicker === 'MES' || cleanTicker.includes('MES');
+  const actualSym = isFutures ? (cleanTicker.startsWith('/') ? cleanTicker : `/${cleanTicker}`) : cleanTicker.replace('/', '');
+  const signQty = qty >= 0 ? `+${qty}` : `${qty}`;
+  const exitSignQty = qty > 0 ? `-${qty}` : `${qty}`;
+
+  if (isFutures) {
+    // CME Futures Options Bracket (no '100' share deliverable)
+    const symbolStr = `${actualSym} ${tosExpirationStr} ${strike} ${optionType}`;
+    return `BUY ${signQty} ${symbolStr} @${entryPremium.toFixed(2)} LMT [1st Triggers OCO: SELL ${exitSignQty} ${symbolStr} @${targetPremium.toFixed(2)} LMT, SELL ${exitSignQty} ${symbolStr} @${stopPremium.toFixed(2)} STP]`;
+  }
+
+  // Equity Options Bracket (standard 100 multiplier and single option format)
+  const symbolStr = `SINGLE ${cleanTicker} 100 ${tosExpirationStr} ${strike} ${optionType}`;
+  return `BUY ${signQty} ${symbolStr} @${entryPremium.toFixed(2)} LMT [1st Triggers OCO: SELL ${exitSignQty} ${symbolStr} @${targetPremium.toFixed(2)} LMT, SELL ${exitSignQty} ${symbolStr} @${stopPremium.toFixed(2)} STP]`;
+}
+
+/**
+ * Formats thinkorswim Stock or Futures Limit Order Command
+ * For Stocks: BUY +100 IREN @36.93 LMT or SELL -100 IREN @36.93 LMT
+ * For Futures (/MES): BUY +1 /MES @5800.25 LMT or SELL -1 /MES @5800.25 LMT
+ */
+export function formatTosStockOrFuturesCommand(
+  symbol: string,
+  side: 'long' | 'short',
+  qty: number,
+  entryPrice: number
+): string {
+  const cleanSym = symbol.trim().toUpperCase();
+  const isFutures = cleanSym.startsWith('/') || cleanSym.includes('MES') || cleanSym.includes('ES');
+  const actualSym = isFutures && !cleanSym.startsWith('/') ? `/${cleanSym}` : cleanSym;
+  const action = side === 'long' ? 'BUY' : 'SELL';
+  const signQty = side === 'long' ? `+${qty}` : `-${qty}`;
+  return `${action} ${signQty} ${actualSym} @${entryPrice.toFixed(2)} LMT`;
+}
+
+/**
+ * Human-readable Charles Schwab Equity or Futures Order Slip
+ */
+export function formatSchwabStockSummary(
+  symbol: string,
+  side: 'long' | 'short',
+  shares: number,
+  entry: number,
+  stopLoss: number,
+  takeProfit: number,
+  rrRatio: number
+): string {
+  const cleanSym = symbol.trim().toUpperCase();
+  const isFutures = cleanSym.startsWith('/') || cleanSym.includes('MES') || cleanSym.includes('ES') || cleanSym.includes('NQ') || cleanSym.includes('MNQ');
+  const actualSym = isFutures ? (cleanSym.startsWith('/') ? cleanSym : `/${cleanSym}`) : cleanSym;
+  const action = side === 'long' ? 'BUY (Long)' : 'SELL SHORT (Bearish)';
+  const pointMultiplier = getContractPointValue(actualSym);
+
+  return [
+    `=== CHARLES SCHWAB ${isFutures ? 'FUTURES' : 'EQUITY'} ORDER TICKET ===`,
+    `SYMBOL:       ${actualSym}`,
+    `ACTION:       ${action}`,
+    `QUANTITY:     ${shares} ${isFutures ? 'Contracts' : 'Shares'}`,
+    `ORDER TYPE:   Limit with OCO Bracket`,
+    ...(isFutures ? [`MULTIPLIER:   $${pointMultiplier.toFixed(2)}/point`] : []),
+    `-----------------------------------------`,
+    `1. ENTRY LIMIT:       $${entry.toFixed(2)}`,
+    `2. STOP-LOSS (SL):    $${stopLoss.toFixed(2)} (with ATR buffer)`,
+    `3. TARGET (TP):       $${takeProfit.toFixed(2)} (Opposing Zone)`,
+    `-----------------------------------------`,
+    `RISK / REWARD: 1 : ${rrRatio.toFixed(1)}`,
+  ].join('\n');
+}
+
+/**
+ * Generates a complete ThinkorSwim Order Blueprint Summary text block for clipboard or notes
+ */
+export function generateTosFullOrderSetSummary(
+  optionPlay: SchwabOptionContractRecommendation,
+  quantity: number = 2
+): string {
+  const isMulti = quantity >= 2;
+  const q1 = Math.floor(quantity / 2);
+  const q2 = Math.ceil(quantity / 2);
+  const entryLine = formatTosNaturalOptionCommand(
+    optionPlay.ticker,
+    optionPlay.tosExpirationStr,
+    optionPlay.strike,
+    optionPlay.optionType,
+    optionPlay.entry.premium,
+    quantity
+  );
+  
+  const compoundString = formatTosCompoundOptionBracketCommand(
+    optionPlay.ticker,
+    optionPlay.tosExpirationStr,
+    optionPlay.strike,
+    optionPlay.optionType,
+    optionPlay.entry.premium,
+    optionPlay.stopLoss.premium,
+    optionPlay.target.tp2.premium,
+    quantity
+  );
+
+  if (isMulti) {
+    const tp1Line = formatTosNaturalOptionExitCommand(
+      optionPlay.ticker,
+      optionPlay.tosExpirationStr,
+      optionPlay.strike,
+      optionPlay.optionType,
+      optionPlay.target.tp1.premium,
+      'LMT',
+      q1
+    );
+    const sl1Line = formatTosNaturalOptionExitCommand(
+      optionPlay.ticker,
+      optionPlay.tosExpirationStr,
+      optionPlay.strike,
+      optionPlay.optionType,
+      optionPlay.stopLoss.premium,
+      'STP',
+      q1
+    );
+    const tp2Line = formatTosNaturalOptionExitCommand(
+      optionPlay.ticker,
+      optionPlay.tosExpirationStr,
+      optionPlay.strike,
+      optionPlay.optionType,
+      optionPlay.target.tp2.premium,
+      'LMT',
+      q2
+    );
+    const sl2Line = formatTosNaturalOptionExitCommand(
+      optionPlay.ticker,
+      optionPlay.tosExpirationStr,
+      optionPlay.strike,
+      optionPlay.optionType,
+      optionPlay.stopLoss.premium,
+      'STP',
+      q2
+    );
+
+    return [
+      `=== THINKORSWIM 1ST TRIGGERS 2 OCO ORDER SET (${quantity} CONTRACTS) ===`,
+      `[COMPOUND STRING]:  ${compoundString}`,
+      `------------------------------------------------------------------------`,
+      `[ROW 1 - ENTRY]:    ${entryLine}`,
+      `[ROW 2 - TP1 LMT]:  ${tp1Line}`,
+      `[ROW 3 - SL1 STP]:  ${sl1Line}  <-- (Order type MUST be STP)`,
+      `[ROW 4 - TP2 LMT]:  ${tp2Line}`,
+      `[ROW 5 - SL2 STP]:  ${sl2Line}  <-- (Order type MUST be STP)`,
+      `========================================================================`,
+      `HOW TO EXECUTE IN THINKORSWIM:`,
+      `1. Paste the [COMPOUND STRING] directly via clipboard icon (📋) in Order Entry Tools.`,
+      `2. Or paste ROW 1, set Advanced Order to '1st Triggers 2 OCO', and verify Stop rows are 'STP'.`,
+      `3. Confirm and send! Un-triggered stops will rest safely under 'Waiting Trigger'.`,
+    ].join('\n');
+  }
+
+  const tpLine = formatTosNaturalOptionExitCommand(
+    optionPlay.ticker,
+    optionPlay.tosExpirationStr,
+    optionPlay.strike,
+    optionPlay.optionType,
+    optionPlay.target.tp2.premium,
+    'LMT',
+    1
+  );
+  const slLine = formatTosNaturalOptionExitCommand(
+    optionPlay.ticker,
+    optionPlay.tosExpirationStr,
+    optionPlay.strike,
+    optionPlay.optionType,
+    optionPlay.stopLoss.premium,
+    'STP',
+    1
+  );
+
+  return [
+    `=== THINKORSWIM 1ST TRIGGERS OCO ORDER SET (1 CONTRACT) ===`,
+    `[COMPOUND STRING]:  ${compoundString}`,
+    `-------------------------------------------------------------`,
+    `[ROW 1 - ENTRY]:   ${entryLine}`,
+    `[ROW 2 - TP LMT]:  ${tpLine}`,
+    `[ROW 3 - SL STP]:  ${slLine}  <-- (Order type MUST be STP)`,
+    `=============================================================`,
+    `HOW TO EXECUTE IN THINKORSWIM:`,
+    `1. Paste the [COMPOUND STRING] directly via clipboard icon (📋) in Order Entry Tools.`,
+    `2. Or paste ROW 1, set Advanced Order to '1st Triggers OCO', and verify Stop row is 'STP'.`,
+  ].join('\n');
 }

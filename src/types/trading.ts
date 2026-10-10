@@ -18,6 +18,12 @@ export type ZonePattern =
 
 export type ZoneStatus = 'fresh' | 'tested' | 'weakened' | 'mitigated';
 
+export type ProximityPhase = 
+  | 'Phase A: Staging (1.0–1.5x ATR)' 
+  | 'Phase B: Zone Touch (Execute)' 
+  | 'Phase C: In-Play (3-Bar Rule)' 
+  | 'Dormant (>1.5x ATR)';
+
 export interface SupplyDemandZone {
   id: string;
   type: ZoneType;
@@ -25,23 +31,30 @@ export interface SupplyDemandZone {
   high: number;           // Upper boundary
   low: number;            // Lower boundary
   equilibrium: number;    // 50% midpoint
+  proximalLine: number;   // Outer boundary facing market price (Entry level)
+  distalLine: number;     // Inner boundary away from market price (Hard stop anchor)
   startIndex: number;     // Index in candle array where base was formed
   endIndex: number;       // Index where explosive impulse started
   startTime: number;
-  departureVelocity: number; // Multiplier of ATR
+  departureVelocity: number; // Multiplier of ATR (>= 1.5x required)
   departurePercent: number;  // % price moved away in impulse
   strengthScore: number;  // 0 - 100 quality score
   testedCount: number;    // How many times price tested this zone
-  isMitigated: boolean;   // True if candle body closed through the zone
+  isDepleted: boolean;    // >= 2 tests means high breakout risk
+  isMitigated: boolean;   // True if candle closed through or breached distal
   mitigatedIndex?: number;
   mitigatedTime?: number;
   volatilityAtCreation: number; // ATR at the time zone was detected
-  baseLength: number;     // Number of candles in base (1-4)
-  volumeImbalanceRatio?: number; // Multiple of 20-period avg volume on departure (wholesaler volume surge)
+  baseLength: number;     // Number of candles in base (1-4 max)
+  volumeImbalanceRatio?: number; // Multiple of 20-period avg volume on departure (>= 1.3x)
   trendConfluence?: 'pro-trend' | 'counter-trend' | 'neutral';
   conservativeEntry?: number; // 50% zone equilibrium level for enhanced 4:1+ R:R
   confluenceTags?: string[]; // e.g. ['Pro-Trend 20/50 EMA', 'Fresh 0-Test', 'Wholesale Volume Imbalance']
   winProbabilityEstimate?: number; // Statistical win rate probability estimate (e.g. 78%)
+  barAge?: number;        // Age in candles since zone formation
+  proximityPhase?: ProximityPhase;
+  distanceInAtr?: number;
+  isRecentPrimary?: boolean; // True for the single most recent active zone of this type
   notes: string;
 }
 
@@ -54,7 +67,7 @@ export interface VolatilityMetrics {
   bbLower: number;
   bbWidth: number; // (Upper - Lower) / Middle * 100
   regime: 'Compression (Squeeze)' | 'Normal' | 'Expansion (High Volatility)' | 'Extreme Impulse';
-  recommendedBufferMultiplier: number; // 1.2 to 1.8x ATR
+  recommendedBufferMultiplier: number; // 1.2 to 1.8x ATR (default 1.35x)
 }
 
 export interface TradeRecommendation {
@@ -64,14 +77,15 @@ export interface TradeRecommendation {
   side: 'long' | 'short';
   zoneType: ZoneType;
   pattern: ZonePattern;
-  entry: number;
+  entry: number;           // Aggressive Proximal Line Entry
+  conservativeEntry: number; // Conservative 50% Midline Equilibrium Entry
   entryType: 'Zone Boundary' | '50% Equilibrium';
-  stopLoss: number;
-  bufferAtrMultiplier: number;
+  stopLoss: number;        // Distal Line ± 1.35x ATR
+  bufferAtrMultiplier: number; // Default 1.35x
   bufferAmount: number;
-  takeProfit1: number; // 1:2 R:R
-  takeProfit2: number; // 1:3 R:R
-  takeProfit3: number; // 1:4.5 R:R or opposing zone
+  takeProfit1: number;     // 1:2 R:R (de-risk partials)
+  takeProfit2: number;     // Opposing Structural Zone Proximal Line (1:3 to 1:4.5 R:R)
+  takeProfit3: number;     // Extended runner
   riskPerUnit: number;
   rewardPerUnit1: number;
   rewardPerUnit2: number;
@@ -81,6 +95,9 @@ export interface TradeRecommendation {
   qualityScore: number;
   rationale: string;
   currentDistancePercent: number;
+  distanceInAtr?: number;
+  proximityPhase?: ProximityPhase;
+  opposingZoneId?: string;
 }
 
 export interface BacktestConfig {
@@ -277,6 +294,8 @@ export interface MonitoredOpportunity {
   lastUpdated: string;
   optionStrike?: number;
   optionExp?: string;
+  optionTosExp?: string;
+  optionDotSymbol?: string;
   optionPremium?: number;
 }
 

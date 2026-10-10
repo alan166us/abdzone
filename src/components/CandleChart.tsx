@@ -368,12 +368,22 @@ export const CandleChart: React.FC<CandleChartProps> = ({
     ctx.setLineDash([]); // Reset dashed
 
     // 3. Draw Supply & Demand Zones in Fixed-Width Coordinates
-    const activeZones = zones.filter(z => {
+    let activeZones = zones.filter(z => {
       if (z.isMitigated && !showMitigated) return false;
       if (z.type === 'demand' && !showDemand) return false;
       if (z.type === 'supply' && !showSupply) return false;
       return true;
     });
+
+    if (recentOnlyZones) {
+      // Keep strictly ONLY the single most recent unmitigated demand zone and single most recent unmitigated supply zone
+      const recentDemand = activeZones.filter(z => z.type === 'demand' && !z.isMitigated).slice(0, 1);
+      const recentSupply = activeZones.filter(z => z.type === 'supply' && !z.isMitigated).slice(0, 1);
+      const recentMitigated = showMitigated ? activeZones.filter(z => z.isMitigated).slice(0, 1) : [];
+      activeZones = [...recentDemand, ...recentSupply, ...recentMitigated];
+    }
+
+    const drawnTags: { x: number; y: number; w: number; h: number }[] = [];
 
     for (const zone of activeZones) {
       // Find start & end X by matching exact candle timestamp (guarantees zero drift/shifting)
@@ -548,7 +558,16 @@ export const CandleChart: React.FC<CandleChartProps> = ({
       ctx.font = 'bold 9px "JetBrains Mono", monospace';
       const tagWidth = ctx.measureText(tagText).width + 10;
       const tagX = Math.min(currentChartWidth - tagWidth - 8, Math.max(rawZoneLeft + 6, 8));
-      const tagY = topY + 11;
+      let tagY = topY + 11;
+
+      // Prevent label collision with previously drawn tags
+      for (const prev of drawnTags) {
+        const xOverlap = tagX < prev.x + prev.w && tagX + tagWidth > prev.x;
+        if (xOverlap && Math.abs(tagY - prev.y) < 14) {
+          tagY = prev.y + 14;
+        }
+      }
+      drawnTags.push({ x: tagX, y: tagY, w: tagWidth, h: 12 });
 
       // Tag pill background with conviction styling
       const tagBgAlpha = isHighConviction ? 0.95 : (zone.isMitigated ? 0.60 : (isDepleted ? 0.70 : 0.85));
@@ -658,7 +677,7 @@ export const CandleChart: React.FC<CandleChartProps> = ({
       ctx.fillStyle = 'rgba(16, 185, 129, 0.12)';
       ctx.fillRect(setupStartX, Math.min(entryY, tp2Y), setupEndX - setupStartX, Math.abs(entryY - tp2Y));
 
-      // Entry line (Cyan)
+      // Entry line (Cyan) - Aggressive Proximal
       ctx.strokeStyle = '#38BDF8';
       ctx.lineWidth = 1.8;
       ctx.beginPath();
@@ -666,7 +685,20 @@ export const CandleChart: React.FC<CandleChartProps> = ({
       ctx.lineTo(setupEndX, entryY);
       ctx.stroke();
 
-      // SL line (Red dotted)
+      // Conservative 50% Equilibrium Entry (Amber dashed)
+      if (rec.conservativeEntry) {
+        const consY = getY(rec.conservativeEntry);
+        ctx.strokeStyle = '#F59E0B';
+        ctx.lineWidth = 1.4;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(setupStartX, consY);
+        ctx.lineTo(setupEndX, consY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Hard SL line (Red dotted) - Distal ± 1.35x ATR
       ctx.strokeStyle = '#EF4444';
       ctx.lineWidth = 1.8;
       ctx.setLineDash([4, 3]);
@@ -675,13 +707,18 @@ export const CandleChart: React.FC<CandleChartProps> = ({
       ctx.lineTo(setupEndX, slY);
       ctx.stroke();
 
-      // TP lines (Emerald dotted)
-      ctx.strokeStyle = '#10B981';
+      // TP1 line (1:2 R:R De-risk)
+      ctx.strokeStyle = '#34D399';
+      ctx.setLineDash([3, 3]);
       ctx.beginPath();
       ctx.moveTo(setupStartX, tp1Y);
       ctx.lineTo(setupEndX, tp1Y);
       ctx.stroke();
 
+      // TP2 line (Opposing Zone Proximal)
+      ctx.strokeStyle = '#10B981';
+      ctx.setLineDash([]);
+      ctx.lineWidth = 2.0;
       ctx.beginPath();
       ctx.moveTo(setupStartX, tp2Y);
       ctx.lineTo(setupEndX, tp2Y);
@@ -692,27 +729,37 @@ export const CandleChart: React.FC<CandleChartProps> = ({
       ctx.fillStyle = '#0284C7';
       ctx.fillRect(currentChartWidth + 2, entryY - 8, priceAxisWidth - 4, 16);
       ctx.fillStyle = '#FFFFFF';
-      ctx.font = '10px "JetBrains Mono", monospace';
+      ctx.font = 'bold 9px "JetBrains Mono", monospace';
       ctx.textAlign = 'left';
-      ctx.fillText(rec.entry.toFixed(2), currentChartWidth + 6, entryY + 4);
+      ctx.fillText(`E:${rec.entry.toFixed(2)}`, currentChartWidth + 4, entryY + 4);
+
+      if (rec.conservativeEntry) {
+        const consY = getY(rec.conservativeEntry);
+        ctx.fillStyle = '#B45309';
+        ctx.fillRect(currentChartWidth + 2, consY - 7, priceAxisWidth - 4, 14);
+        ctx.fillStyle = '#FEF3C7';
+        ctx.fillText(`50%:${rec.conservativeEntry.toFixed(2)}`, currentChartWidth + 4, consY + 3);
+      }
 
       ctx.fillStyle = '#DC2626';
       ctx.fillRect(currentChartWidth + 2, slY - 8, priceAxisWidth - 4, 16);
       ctx.fillStyle = '#FFFFFF';
-      ctx.fillText(rec.stopLoss.toFixed(2), currentChartWidth + 6, slY + 4);
+      ctx.fillText(`SL:${rec.stopLoss.toFixed(2)}`, currentChartWidth + 4, slY + 4);
 
       ctx.fillStyle = '#059669';
       ctx.fillRect(currentChartWidth + 2, tp2Y - 8, priceAxisWidth - 4, 16);
       ctx.fillStyle = '#FFFFFF';
-      ctx.fillText(rec.takeProfit2.toFixed(2), currentChartWidth + 6, tp2Y + 4);
+      ctx.fillText(`TP2:${rec.takeProfit2.toFixed(2)}`, currentChartWidth + 4, tp2Y + 4);
 
-      // Volatility Buffer annotation label
-      ctx.fillStyle = '#FCA5A5';
+      // S.E.T. Annotation labels on chart
       ctx.font = '10px "Cabinet Grotesk", sans-serif';
       ctx.textAlign = 'right';
-      ctx.fillText(`SL (${rec.bufferAtrMultiplier.toFixed(1)}x ATR Buffer)`, currentChartWidth - 8, slY + (rec.side === 'long' ? 12 : -5));
+      ctx.fillStyle = '#FCA5A5';
+      ctx.fillText(`Hard SL (${rec.bufferAtrMultiplier.toFixed(2)}x ATR Buffer)`, currentChartWidth - 8, slY + (rec.side === 'long' ? 12 : -5));
       ctx.fillStyle = '#6EE7B7';
-      ctx.fillText(`TP2 (1:3 R:R)`, currentChartWidth - 8, tp2Y + (rec.side === 'long' ? -4 : 12));
+      ctx.fillText(`TP1 (1:2 R:R De-Risk)`, currentChartWidth - 8, tp1Y + (rec.side === 'long' ? 12 : -5));
+      ctx.fillStyle = '#34D399';
+      ctx.fillText(`TP2 (Opposing Zone Proximal: 1:${Number(rec.riskRewardRatio).toFixed(1)} R:R)`, currentChartWidth - 8, tp2Y + (rec.side === 'long' ? -5 : 12));
     }
 
     // 7. Latest Price Banner on Price Axis
@@ -816,6 +863,7 @@ export const CandleChart: React.FC<CandleChartProps> = ({
     showVolume,
     tzMode,
     hourShift,
+    recentOnlyZones,
   ]);
 
   // Identify if a point (x, y) on canvas falls within any active zone
@@ -827,12 +875,19 @@ export const CandleChart: React.FC<CandleChartProps> = ({
     const price = maxPrice - (y / chartHeight) * priceRange;
     const globalIdx = Math.floor(startIndex + x / candleSpacing);
 
-    const active = zones.filter(z => {
+    let active = zones.filter(z => {
       if (z.isMitigated && !showMitigated) return false;
       if (z.type === 'demand' && !showDemand) return false;
       if (z.type === 'supply' && !showSupply) return false;
       return true;
     });
+
+    if (recentOnlyZones) {
+      const recentDemand = active.filter(z => z.type === 'demand' && !z.isMitigated).slice(0, 1);
+      const recentSupply = active.filter(z => z.type === 'supply' && !z.isMitigated).slice(0, 1);
+      const recentMitigated = showMitigated ? active.filter(z => z.isMitigated).slice(0, 1) : [];
+      active = [...recentDemand, ...recentSupply, ...recentMitigated];
+    }
 
     return active.find(z => {
       let actualStart = z.startIndex;
@@ -1162,6 +1217,15 @@ export const CandleChart: React.FC<CandleChartProps> = ({
           <div className="w-[1px] h-4 bg-slate-800 mx-0.5" />
 
           {/* Layer toggles */}
+          <button
+            onClick={() => setRecentOnlyZones(!recentOnlyZones)}
+            className={`px-2 py-1 text-[10px] font-medium rounded transition-colors ${
+              recentOnlyZones ? 'bg-sky-950/80 text-sky-300 border border-sky-800/60 font-semibold' : 'text-slate-500 hover:text-slate-300'
+            }`}
+            title={recentOnlyZones ? "Showing strictly the single most recent active Demand and Supply zone" : "Showing all historical detected zones"}
+          >
+            {recentOnlyZones ? '⚡ Recent (1 D / 1 S)' : 'All Historical'}
+          </button>
           <button
             onClick={() => setShowDemand(!showDemand)}
             className={`px-2 py-1 text-[10px] font-medium rounded transition-colors ${

@@ -19,7 +19,9 @@ import {
   LayoutGrid,
   Calculator,
   Flame,
-  Zap
+  Zap,
+  Lock,
+  Activity
 } from 'lucide-react';
 
 export type ActiveTab = 'chart' | 'options' | 'monitor' | 'radar' | 'journal' | 'volatility' | 'backtest' | 'sizer';
@@ -35,6 +37,7 @@ interface TopNavProps {
   onOpenDiagnostics?: () => void;
   onOpenAiAnalyst: () => void;
   onOpenAiChat?: () => void;
+  onOpenQaMonitor?: () => void;
   selectedAsset: string;
   onSelectAsset: (symbol: string) => void;
   alertCount?: number;
@@ -93,6 +96,7 @@ export const TopNav: React.FC<TopNavProps> = ({
   onOpenDiagnostics,
   onOpenAiAnalyst,
   onOpenAiChat,
+  onOpenQaMonitor,
   selectedAsset,
   onSelectAsset,
   alertCount = 0,
@@ -398,6 +402,20 @@ export const TopNav: React.FC<TopNavProps> = ({
           <span className="sm:hidden">AI</span>
         </button>
 
+        {/* QA Safety Status Pill (Real Money Protection Gate) */}
+        {onOpenQaMonitor && (
+          <button
+            onClick={onOpenQaMonitor}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-mono font-medium rounded-lg border border-rose-800/80 bg-rose-950/50 hover:bg-rose-900/60 text-rose-300 transition-colors cursor-pointer shadow-sm whitespace-nowrap shrink-0"
+            title="Institutional QA Safety Interlock: Real-money routing is strictly locked. Click to inspect QA Monitor & Pre-Flight Checklist."
+          >
+            <Lock className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+            <span className="hidden xl:inline">QA Safety:</span>
+            <span className="text-amber-300 font-bold">Real Money Locked</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" title="QA Gate Active" />
+          </button>
+        )}
+
         {/* Configuration, Setup & Feeds Dropdown */}
         <div className="relative shrink-0" ref={configRef}>
           <button
@@ -531,6 +549,27 @@ export const TopNav: React.FC<TopNavProps> = ({
                 <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500 px-1">
                   Diagnostics &amp; System Health
                 </div>
+
+                {onOpenQaMonitor && (
+                  <button
+                    onClick={() => {
+                      setIsConfigOpen(false);
+                      onOpenQaMonitor();
+                    }}
+                    className="w-full flex items-center justify-between p-2 rounded-lg bg-slate-900/80 hover:bg-slate-800/90 border border-rose-900/50 hover:border-rose-500/70 text-left transition-all group cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded bg-rose-950/80 border border-rose-800/80 flex items-center justify-center shrink-0 group-hover:border-rose-500">
+                        <Lock className="w-4 h-4 text-rose-400" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-semibold text-white group-hover:text-rose-300">QA Order Monitor &amp; Safety Lock</div>
+                        <div className="text-[10px] text-slate-400">8 guardrails · dry-run simulator · audit trail</div>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-mono text-rose-400 group-hover:translate-x-0.5 transition-transform">Inspect &rarr;</span>
+                  </button>
+                )}
 
                 {onOpenDiagnostics && (
                   <button

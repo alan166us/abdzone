@@ -37,22 +37,22 @@ export function generateTradeRecommendations(
 
   // 1. Long Recommendations for top Demand Zones
   for (const zone of activeDemandZones.slice(0, 3)) {
-    const entry = zone.high; // Limit order at top of demand zone (proximal line)
-    const stopLoss = Math.max(0.0001, zone.low - bufferAmount);
+    const entry = zone.proximalLine || zone.high; // Aggressive Limit order at Proximal Line
+    const conservativeEntry = zone.conservativeEntry || zone.equilibrium; // Conservative 50% Equilibrium Entry
+    const stopLoss = Math.max(0.0001, (zone.distalLine || zone.low) - bufferAmount); // Hard SL = Distal - 1.35x ATR
     const riskPerUnit = entry - stopLoss;
 
     if (riskPerUnit <= 0) continue;
 
-    // Nearest overhead supply zone floor for target projection
-    const overheadSupply = activeSupplyZones.find(s => s.low > entry);
-    const tp1 = entry + riskPerUnit * 2.0;
-    const tp2 = entry + riskPerUnit * 3.0;
-    const rawTp3 = entry + riskPerUnit * 4.5;
-    const tp3 = overheadSupply ? Math.min(rawTp3, overheadSupply.low * 0.998) : rawTp3;
+    // Nearest overhead supply zone proximal line for TP2 target projection
+    const overheadSupply = activeSupplyZones.find(s => (s.proximalLine || s.low) > entry);
+    const tp1 = entry + riskPerUnit * 2.0; // Fixed 1:2 R:R (de-risk / partial profit)
+    const tp2 = overheadSupply ? (overheadSupply.proximalLine || overheadSupply.low) : entry + riskPerUnit * 3.2; // Opposing zone proximal
+    const tp3 = entry + riskPerUnit * 4.5; // Extended runner
 
     const distancePercent = ((currentPrice - entry) / currentPrice) * 100;
     const tags = zone.confluenceTags && zone.confluenceTags.length > 0 ? zone.confluenceTags.join(' · ') : 'Standard Imbalance';
-    const winRateEst = zone.winProbabilityEstimate || 72;
+    const winRateEst = zone.winProbabilityEstimate || 74;
 
     recommendations.push({
       id: `rec-long-${zone.id}`,
@@ -62,6 +62,7 @@ export function generateTradeRecommendations(
       zoneType: 'demand',
       pattern: zone.pattern,
       entry,
+      conservativeEntry,
       entryType: 'Zone Boundary',
       stopLoss,
       bufferAtrMultiplier: bufferMultiplier,
@@ -73,31 +74,35 @@ export function generateTradeRecommendations(
       rewardPerUnit1: tp1 - entry,
       rewardPerUnit2: tp2 - entry,
       rewardPerUnit3: tp3 - entry,
-      riskRewardRatio: 3.0,
+      riskRewardRatio: Number(((tp2 - entry) / riskPerUnit).toFixed(1)),
       status: 'active',
       qualityScore: zone.strengthScore,
-      rationale: `Buy limit placed at ${zone.pattern} Demand Zone ($${zone.low.toFixed(2)} - $${zone.high.toFixed(2)}). [Confluence: ${tags}] · Est. Win Edge: ${winRateEst}%. Stop-loss incorporates ${(bufferMultiplier).toFixed(2)}x ATR ($${bufferAmount.toFixed(2)}) buffer below base low. Conservative 50% equilibrium entry: $${zone.equilibrium.toFixed(2)}.`,
+      proximityPhase: zone.proximityPhase || 'Dormant (>1.5x ATR)',
+      distanceInAtr: zone.distanceInAtr,
+      opposingZoneId: overheadSupply?.id,
+      rationale: `S.E.T. Long Plan: [Setup: ${zone.pattern} Demand Zone ($${zone.low.toFixed(2)} - $${zone.high.toFixed(2)}) · ${tags}]. [Entry: Aggressive at Proximal $${entry.toFixed(2)} / Conservative 50% Midline at $${conservativeEntry.toFixed(2)}]. [Stop: Hard SL at Distal - ${(bufferMultiplier).toFixed(2)}x ATR ($${stopLoss.toFixed(2)})]. [Targets: TP1 at 1:2 R:R ($${tp1.toFixed(2)}) · TP2 at Opposing Supply Proximal ($${tp2.toFixed(2)})]. 3-Bar Rule: If price consolidates inside base for >3-5 bars without rejection, flatten at breakeven.`,
       currentDistancePercent: distancePercent,
     });
   }
 
   // 2. Short Recommendations for top Supply Zones
   for (const zone of activeSupplyZones.slice(0, 3)) {
-    const entry = zone.low; // Limit order at bottom of supply zone (proximal line)
-    const stopLoss = zone.high + bufferAmount;
+    const entry = zone.proximalLine || zone.low; // Aggressive Limit order at Proximal Line
+    const conservativeEntry = zone.conservativeEntry || zone.equilibrium; // Conservative 50% Equilibrium Entry
+    const stopLoss = (zone.distalLine || zone.high) + bufferAmount; // Hard SL = Distal + 1.35x ATR
     const riskPerUnit = stopLoss - entry;
 
     if (riskPerUnit <= 0) continue;
 
-    const lowerDemand = activeDemandZones.find(d => d.high < entry);
-    const tp1 = entry - riskPerUnit * 2.0;
-    const tp2 = entry - riskPerUnit * 3.0;
-    const rawTp3 = entry - riskPerUnit * 4.5;
-    const tp3 = lowerDemand ? Math.max(0.0001, Math.max(rawTp3, lowerDemand.high * 1.002)) : Math.max(0.0001, rawTp3);
+    // Nearest lower demand zone proximal line for TP2 target projection
+    const lowerDemand = activeDemandZones.find(d => (d.proximalLine || d.high) < entry);
+    const tp1 = entry - riskPerUnit * 2.0; // Fixed 1:2 R:R (de-risk / partial profit)
+    const tp2 = lowerDemand ? (lowerDemand.proximalLine || lowerDemand.high) : entry - riskPerUnit * 3.2; // Opposing zone proximal
+    const tp3 = entry - riskPerUnit * 4.5; // Extended runner
 
     const distancePercent = ((entry - currentPrice) / currentPrice) * 100;
     const tags = zone.confluenceTags && zone.confluenceTags.length > 0 ? zone.confluenceTags.join(' · ') : 'Standard Imbalance';
-    const winRateEst = zone.winProbabilityEstimate || 72;
+    const winRateEst = zone.winProbabilityEstimate || 74;
 
     recommendations.push({
       id: `rec-short-${zone.id}`,
@@ -107,6 +112,7 @@ export function generateTradeRecommendations(
       zoneType: 'supply',
       pattern: zone.pattern,
       entry,
+      conservativeEntry,
       entryType: 'Zone Boundary',
       stopLoss,
       bufferAtrMultiplier: bufferMultiplier,
@@ -118,10 +124,13 @@ export function generateTradeRecommendations(
       rewardPerUnit1: entry - tp1,
       rewardPerUnit2: entry - tp2,
       rewardPerUnit3: entry - tp3,
-      riskRewardRatio: 3.0,
+      riskRewardRatio: Number(((entry - tp2) / riskPerUnit).toFixed(1)),
       status: 'active',
       qualityScore: zone.strengthScore,
-      rationale: `Sell limit placed at ${zone.pattern} Supply Zone ($${zone.low.toFixed(2)} - $${zone.high.toFixed(2)}). [Confluence: ${tags}] · Est. Win Edge: ${winRateEst}%. Stop-loss incorporates ${(bufferMultiplier).toFixed(2)}x ATR ($${bufferAmount.toFixed(2)}) buffer above base high. Conservative 50% equilibrium entry: $${zone.equilibrium.toFixed(2)}.`,
+      proximityPhase: zone.proximityPhase || 'Dormant (>1.5x ATR)',
+      distanceInAtr: zone.distanceInAtr,
+      opposingZoneId: lowerDemand?.id,
+      rationale: `S.E.T. Short Plan: [Setup: ${zone.pattern} Supply Zone ($${zone.low.toFixed(2)} - $${zone.high.toFixed(2)}) · ${tags}]. [Entry: Aggressive at Proximal $${entry.toFixed(2)} / Conservative 50% Midline at $${conservativeEntry.toFixed(2)}]. [Stop: Hard SL at Distal + ${(bufferMultiplier).toFixed(2)}x ATR ($${stopLoss.toFixed(2)})]. [Targets: TP1 at 1:2 R:R ($${tp1.toFixed(2)}) · TP2 at Opposing Demand Proximal ($${tp2.toFixed(2)})]. 3-Bar Rule: If price consolidates inside base for >3-5 bars without rejection, flatten at breakeven.`,
       currentDistancePercent: distancePercent,
     });
   }
@@ -563,25 +572,60 @@ export function runHistoricalZoneBacktest(
 }
 
 /**
- * Calculates position sizing based on account equity and risk budget
+ * Calculates position sizing based on account equity, risk budget, and symbol specifications.
+ * For futures like /MES, calculates exact contracts based on point multiplier ($5/pt) and round-turn commissions.
  */
 export function calculatePositionSize(
   accountEquity: number,
   riskPercent: number,
   entry: number,
-  stopLoss: number
+  stopLoss: number,
+  symbol: string = 'SPY'
 ) {
-  const riskAmount = (accountEquity * (riskPercent / 100));
-  const riskPerUnit = Math.abs(entry - stopLoss);
-  if (riskPerUnit <= 0) return { units: 0, notional: 0, riskAmount: 0 };
+  const riskBudget = (accountEquity * (riskPercent / 100));
+  const cleanSym = (symbol || '').toUpperCase();
+  const isMes = cleanSym.includes('MES');
+  const isEs = !isMes && (cleanSym.includes('/ES') || cleanSym === 'ES');
+  const isMnq = cleanSym.includes('MNQ');
+  const isNq = !isMnq && (cleanSym.includes('/NQ') || cleanSym === 'NQ');
+  const isFutures = isMes || isEs || isMnq || isNq;
 
-  const units = riskAmount / riskPerUnit;
-  const notional = units * entry;
+  const pointValue = isMes ? 5.0 : isEs ? 50.0 : isMnq ? 2.0 : isNq ? 20.0 : 1.0;
+  const commission = isMes ? 5.0 : (isEs || isMnq || isNq) ? 5.0 : 0.0; // round-turn commission
+
+  const stopDistance = Math.abs(entry - stopLoss);
+  if (stopDistance <= 0) {
+    return {
+      units: 0,
+      contracts: 0,
+      notional: 0,
+      riskAmount: 0,
+      riskBudget,
+      riskPerUnit: 0,
+      riskPerContract: 0,
+      pointValue,
+      isFutures,
+      isMes,
+    };
+  }
+
+  const riskPerContract = stopDistance * pointValue + commission;
+  const contracts = Math.max(0, Math.floor(riskBudget / riskPerContract));
+  const units = isFutures ? contracts : Number((riskBudget / stopDistance).toFixed(2));
+  const notional = isFutures ? contracts * entry * pointValue : units * entry;
+  const actualRiskAmount = isFutures ? contracts * riskPerContract : riskBudget;
 
   return {
     units,
+    contracts,
     notional,
-    riskAmount,
-    riskPerUnit,
+    riskAmount: actualRiskAmount,
+    riskBudget,
+    riskPerUnit: stopDistance,
+    riskPerContract,
+    pointValue,
+    commission,
+    isFutures,
+    isMes,
   };
 }
