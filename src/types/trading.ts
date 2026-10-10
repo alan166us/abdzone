@@ -50,6 +50,7 @@ export interface SupplyDemandZone {
   trendConfluence?: 'pro-trend' | 'counter-trend' | 'neutral';
   conservativeEntry?: number; // 50% zone equilibrium level for enhanced 4:1+ R:R
   confluenceTags?: string[]; // e.g. ['Pro-Trend 20/50 EMA', 'Fresh 0-Test', 'Wholesale Volume Imbalance']
+  vwapConfluence?: { scoreBonus: number; tag: string };
   winProbabilityEstimate?: number; // Statistical win rate probability estimate (e.g. 78%)
   barAge?: number;        // Age in candles since zone formation
   proximityPhase?: ProximityPhase;
@@ -98,6 +99,7 @@ export interface TradeRecommendation {
   distanceInAtr?: number;
   proximityPhase?: ProximityPhase;
   opposingZoneId?: string;
+  vwapConfluence?: { scoreBonus: number; tag: string };
 }
 
 export interface BacktestConfig {

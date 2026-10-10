@@ -1,5 +1,6 @@
 import { Candle, SupplyDemandZone, ZonePattern, ZoneType } from '../types/trading';
 import { calculateATR } from './volatility';
+import { calculateSessionVwap, getZoneVwapConfluence } from './vwapEngine';
 
 export interface ZoneDetectorOptions {
   atrPeriod?: number;
@@ -61,6 +62,8 @@ export function detectSupplyDemandZones(
   const atrs = calculateATR(candles, atrPeriod);
   const ema20 = calculateEMA(candles, 20);
   const ema50 = calculateEMA(candles, Math.min(50, Math.floor(candles.length / 2)));
+  const sessionVwap = calculateSessionVwap(candles);
+  const currentVwapPoint = sessionVwap[sessionVwap.length - 1];
   const rawZones: SupplyDemandZone[] = [];
 
   // 1. Scan for explosive departure candles (ERC / Institutional Imbalance candles)
@@ -325,6 +328,17 @@ export function detectSupplyDemandZones(
       }
     }
 
+    const equilibrium = Number(((zoneHigh + zoneLow) / 2).toFixed(2));
+    const proximalLine = type === 'demand' ? Number(zoneHigh.toFixed(2)) : Number(zoneLow.toFixed(2));
+    const distalLine = type === 'demand' ? Number(zoneLow.toFixed(2)) : Number(zoneHigh.toFixed(2));
+
+    // Institutional VWAP Alignment & Value Confluence
+    const vwapConfluence = getZoneVwapConfluence(type, proximalLine, currentVwapPoint);
+    if (vwapConfluence.scoreBonus > 0) {
+      score += vwapConfluence.scoreBonus;
+      confluenceTags.push(vwapConfluence.tag);
+    }
+
     score = Math.max(10, Math.min(99, score));
 
     // Win Rate Probability Estimation based on composite institutional score
@@ -334,9 +348,6 @@ export function detectSupplyDemandZones(
       score >= 65 ? 70 :
       score >= 50 ? 56 : 42;
 
-    const equilibrium = Number(((zoneHigh + zoneLow) / 2).toFixed(2));
-    const proximalLine = type === 'demand' ? Number(zoneHigh.toFixed(2)) : Number(zoneLow.toFixed(2));
-    const distalLine = type === 'demand' ? Number(zoneLow.toFixed(2)) : Number(zoneHigh.toFixed(2));
     const barAge = (candles.length - 1) - baseStartIdx;
     const isDepleted = testedCount >= 2;
 
@@ -399,6 +410,7 @@ export function detectSupplyDemandZones(
       volumeImbalanceRatio,
       trendConfluence,
       confluenceTags,
+      vwapConfluence: vwapConfluence.scoreBonus > 0 ? vwapConfluence : undefined,
       winProbabilityEstimate,
       barAge,
       distanceInAtr,

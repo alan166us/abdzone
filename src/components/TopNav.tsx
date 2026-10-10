@@ -66,7 +66,6 @@ const POPULAR_EQUITIES = [
 
 // Charles Schwab & thinkorswim Futures Contracts
 const POPULAR_FUTURES = [
-  { symbol: 'MES', name: 'MES (/MES Micro E-mini S&P 500 Futures)' },
   { symbol: '/MES', name: '/MES (Micro E-mini S&P 500 Futures)' },
   { symbol: '/ES', name: '/ES (E-mini S&P 500 Futures)' },
   { symbol: '/MNQ', name: '/MNQ (Micro E-mini Nasdaq 100 Futures)' },

@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { Candle, SupplyDemandZone, TradeRecommendation, VolatilityMetrics } from '../types/trading';
+import { calculateSessionVwap, VwapPoint } from '../utils/vwapEngine';
 import { ZoomIn, ZoomOut, RotateCcw, Crosshair, Layers, ChevronRight, Clock, Calendar } from 'lucide-react';
 
 export type TimezoneMode = 'ET' | 'CT' | 'LOCAL' | 'UTC';
@@ -125,9 +126,14 @@ export const CandleChart: React.FC<CandleChartProps> = ({
   const [showSupply, setShowSupply] = useState<boolean>(true);
   const [recentOnlyZones, setRecentOnlyZones] = useState<boolean>(true);
   const [showMitigated, setShowMitigated] = useState<boolean>(false);
+  const [showVwap, setShowVwap] = useState<boolean>(true);
   const [showAtrBands, setShowAtrBands] = useState<boolean>(true);
   const [showTradeSetup, setShowTradeSetup] = useState<boolean>(true);
   const [showVolume, setShowVolume] = useState<boolean>(true);
+
+  // Session Institutional VWAP calculation
+  const sessionVwap = useMemo(() => calculateSessionVwap(candles), [candles]);
+  const latestVwapPoint = sessionVwap[sessionVwap.length - 1];
 
   // Timezone and Hour Shift Configuration (persistent)
   const [tzMode, setTzMode] = useState<TimezoneMode>(() => {
@@ -623,6 +629,80 @@ export const CandleChart: React.FC<CandleChartProps> = ({
       ctx.setLineDash([]);
     }
 
+    // 4.1. Institutional Session VWAP & Standard Deviation Bands (if enabled)
+    if (showVwap && sessionVwap.length > 0) {
+      // Shaded Value Area (+1σ to -1σ)
+      ctx.fillStyle = 'rgba(245, 158, 11, 0.05)';
+      ctx.beginPath();
+      let hasStartedFill = false;
+      visibleCandles.forEach((_, idxInSlice) => {
+        const globalIdx = safeStart + idxInSlice;
+        const pt = sessionVwap[globalIdx];
+        if (!pt) return;
+        const x = getX(globalIdx);
+        const yTop = getY(pt.upper1);
+        if (!hasStartedFill) {
+          ctx.moveTo(x, yTop);
+          hasStartedFill = true;
+        } else {
+          ctx.lineTo(x, yTop);
+        }
+      });
+      for (let idxInSlice = visibleCandles.length - 1; idxInSlice >= 0; idxInSlice--) {
+        const globalIdx = safeStart + idxInSlice;
+        const pt = sessionVwap[globalIdx];
+        if (!pt) continue;
+        const x = getX(globalIdx);
+        const yBot = getY(pt.lower1);
+        ctx.lineTo(x, yBot);
+      }
+      ctx.closePath();
+      ctx.fill();
+
+      // Segmented line drawing respecting session day resets
+      const drawVwapSegmentedLine = (
+        accessor: (pt: VwapPoint) => number,
+        color: string,
+        lineWidth: number,
+        dash: number[] = []
+      ) => {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = lineWidth;
+        ctx.setLineDash(dash);
+        ctx.beginPath();
+        let prevDay = '';
+
+        visibleCandles.forEach((c, idxInSlice) => {
+          const globalIdx = safeStart + idxInSlice;
+          const pt = sessionVwap[globalIdx];
+          if (!pt) return;
+          const x = getX(globalIdx);
+          const y = getY(accessor(pt));
+          const dateStr = new Date(c.time).toLocaleDateString('en-US', { timeZone: 'America/New_York' });
+
+          if (dateStr !== prevDay) {
+            prevDay = dateStr;
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        });
+        ctx.stroke();
+      };
+
+      // ±2.0σ Standard Deviation Bands (Institutional Exhaustion boundaries)
+      drawVwapSegmentedLine(pt => pt.upper2, 'rgba(234, 179, 8, 0.40)', 1, [4, 4]);
+      drawVwapSegmentedLine(pt => pt.lower2, 'rgba(234, 179, 8, 0.40)', 1, [4, 4]);
+
+      // ±1.0σ Standard Deviation Bands (Institutional Value Area boundaries)
+      drawVwapSegmentedLine(pt => pt.upper1, 'rgba(245, 158, 11, 0.65)', 1, [2, 2]);
+      drawVwapSegmentedLine(pt => pt.lower1, 'rgba(245, 158, 11, 0.65)', 1, [2, 2]);
+
+      // Core Session VWAP Baseline
+      drawVwapSegmentedLine(pt => pt.vwap, '#F59E0B', 1.8, []);
+      ctx.setLineDash([]);
+    }
+
     // 5. Draw Candlesticks & Volume (Fixed-width Coordinate System)
     visibleCandles.forEach((candle, idxInSlice) => {
       const globalIdx = safeStart + idxInSlice;
@@ -784,6 +864,19 @@ export const CandleChart: React.FC<CandleChartProps> = ({
       ctx.setLineDash([]);
     }
 
+    // Session VWAP Tag on Price Axis (Amber Gold)
+    if (showVwap && latestVwapPoint) {
+      const vwapY = getY(latestVwapPoint.vwap);
+      if (vwapY >= 0 && vwapY <= height - timeAxisHeight) {
+        ctx.fillStyle = '#D97706';
+        ctx.fillRect(currentChartWidth + 1, vwapY - 7, priceAxisWidth - 2, 14);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 9px "JetBrains Mono", monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(`VWAP:${latestVwapPoint.vwap.toFixed(1)}`, currentChartWidth + 3, vwapY + 3.5);
+      }
+    }
+
     // 8. Crosshair & Value Pointer (if hovering)
     if (crosshairPos && crosshairPos.x < currentChartWidth && crosshairPos.y < chartHeight + volumeHeight) {
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
@@ -858,6 +951,9 @@ export const CandleChart: React.FC<CandleChartProps> = ({
     showDemand,
     showSupply,
     showMitigated,
+    showVwap,
+    sessionVwap,
+    latestVwapPoint,
     showAtrBands,
     showTradeSetup,
     showVolume,
@@ -1165,6 +1261,14 @@ export const CandleChart: React.FC<CandleChartProps> = ({
             </span>
           </div>
 
+          {latestVwapPoint && (
+            <div className="hidden xl:flex items-center gap-1.5 bg-amber-950/40 px-2.5 py-1 rounded border border-amber-800/60 text-amber-300">
+              <span className="text-amber-400 font-semibold">VWAP:</span>
+              <span className="font-bold">${latestVwapPoint.vwap.toFixed(2)}</span>
+              <span className="text-amber-400/80 text-[10px]">(±1σ: ${latestVwapPoint.lower1} - ${latestVwapPoint.upper1})</span>
+            </div>
+          )}
+
           {hoveredZone && (
             <div className="hidden lg:flex items-center gap-1.5 bg-slate-900/90 px-2.5 py-1 rounded border border-slate-800 text-slate-300">
               <span className={hoveredZone.type === 'demand' ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
@@ -1249,6 +1353,15 @@ export const CandleChart: React.FC<CandleChartProps> = ({
             }`}
           >
             Mitigated Zones
+          </button>
+          <button
+            onClick={() => setShowVwap(!showVwap)}
+            className={`px-2 py-1 text-[10px] font-medium rounded transition-colors ${
+              showVwap ? 'bg-amber-950/80 text-amber-300 border border-amber-800/60 font-semibold' : 'text-slate-500 hover:text-slate-300'
+            }`}
+            title="Toggle Session VWAP with ±1σ / ±2σ Standard Deviation Bands"
+          >
+            ⚡ VWAP (±2σ)
           </button>
           <button
             onClick={() => setShowAtrBands(!showAtrBands)}

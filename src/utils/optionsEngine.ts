@@ -575,8 +575,7 @@ export function formatTosNaturalOptionExitCommand(
 
 /**
  * Formats a complete thinkorswim 1st Triggers OCO Compound Bracket Order for Outright Futures or Stock
- * For Futures (/MES): BUY +1 /MES LMT [entryPrice] [TIF=DAY] / SELL +1 /MES STP [stopPrice] [TIF=GTC] / SELL +1 /MES LMT [targetPrice] [TIF=GTC]
- * For Stock (SPY):   BUY +100 SPY LMT [entryPrice] [TIF=DAY] / SELL +100 SPY STP [stopPrice] [TIF=GTC] / SELL +100 SPY LMT [targetPrice] [TIF=GTC]
+ * e.g. BUY +1 /MES @5800.00 LMT [1st Triggers OCO: SELL -1 /MES @5825.00 LMT, SELL -1 /MES @5790.00 STP]
  */
 export function formatTosCompoundStockOrFuturesBracketCommand(
   symbol: string,
@@ -591,11 +590,8 @@ export function formatTosCompoundStockOrFuturesBracketCommand(
   const actualSym = isFutures ? (cleanSym.startsWith('/') ? cleanSym : `/${cleanSym}`) : cleanSym;
   const isLong = side === 'long';
   const entryAction = isLong ? 'BUY' : 'SELL';
-  const entrySignQty = isLong ? `+${qty}` : `-${qty}`;
   const exitAction = isLong ? 'SELL' : 'BUY';
-  const exitSignQty = `+${qty}`;
-
-  return `${entryAction} ${entrySignQty} ${actualSym} LMT ${entryPrice.toFixed(2)} [TIF=DAY] / ${exitAction} ${exitSignQty} ${actualSym} STP ${stopPrice.toFixed(2)} [TIF=GTC] / ${exitAction} ${exitSignQty} ${actualSym} LMT ${targetPrice.toFixed(2)} [TIF=GTC]`;
+  return `${entryAction} +${qty} ${actualSym} @${entryPrice.toFixed(2)} LMT [1st Triggers OCO: ${exitAction} -${qty} ${actualSym} @${targetPrice.toFixed(2)} LMT, ${exitAction} -${qty} ${actualSym} @${stopPrice.toFixed(2)} STP]`;
 }
 
 /**
@@ -691,16 +687,71 @@ export function generateTosFullOrderSetSummary(
   optionPlay: SchwabOptionContractRecommendation,
   quantity: number = 2
 ): string {
-  const isMulti = quantity >= 2;
-  const q1 = Math.floor(quantity / 2);
-  const q2 = Math.ceil(quantity / 2);
+  const safeQty = Math.max(1, Math.round(quantity));
+  
+  if (safeQty < 2) {
+    // Single contract: Route full 1 contract to TP2
+    const entryLine = formatTosNaturalOptionCommand(
+      optionPlay.ticker,
+      optionPlay.tosExpirationStr,
+      optionPlay.strike,
+      optionPlay.optionType,
+      optionPlay.entry.premium,
+      1
+    );
+    const compoundString = formatTosCompoundOptionBracketCommand(
+      optionPlay.ticker,
+      optionPlay.tosExpirationStr,
+      optionPlay.strike,
+      optionPlay.optionType,
+      optionPlay.entry.premium,
+      optionPlay.stopLoss.premium,
+      optionPlay.target.tp2.premium,
+      1
+    );
+    const tpLine = formatTosNaturalOptionExitCommand(
+      optionPlay.ticker,
+      optionPlay.tosExpirationStr,
+      optionPlay.strike,
+      optionPlay.optionType,
+      optionPlay.target.tp2.premium,
+      'LMT',
+      1
+    );
+    const slLine = formatTosNaturalOptionExitCommand(
+      optionPlay.ticker,
+      optionPlay.tosExpirationStr,
+      optionPlay.strike,
+      optionPlay.optionType,
+      optionPlay.stopLoss.premium,
+      'STP',
+      1
+    );
+
+    return [
+      `=== THINKORSWIM 1ST TRIGGERS OCO ORDER SET (1 CONTRACT) ===`,
+      `[COMPOUND STRING]:  ${compoundString}`,
+      `-------------------------------------------------------------`,
+      `[ROW 1 - ENTRY]:   ${entryLine}`,
+      `[ROW 2 - TP LMT]:  ${tpLine}`,
+      `[ROW 3 - SL STP]:  ${slLine}  <-- (Order type MUST be STP)`,
+      `=============================================================`,
+      `HOW TO EXECUTE IN THINKORSWIM:`,
+      `1. Paste the [COMPOUND STRING] directly via clipboard icon (📋) in Order Entry Tools.`,
+      `2. Or paste ROW 1, set Advanced Order to '1st Triggers OCO', and verify Stop row is 'STP'.`,
+    ].join('\n');
+  }
+
+  // Multi-target tranches: Ensure q1 and q2 never evaluate to 0
+  const q1 = Math.max(1, Math.floor(safeQty / 2));
+  const q2 = Math.max(1, safeQty - q1);
   const entryLine = formatTosNaturalOptionCommand(
     optionPlay.ticker,
     optionPlay.tosExpirationStr,
     optionPlay.strike,
     optionPlay.optionType,
     optionPlay.entry.premium,
-    quantity
+    safeQty
   );
   
   const compoundString = formatTosCompoundOptionBracketCommand(
@@ -711,93 +762,59 @@ export function generateTosFullOrderSetSummary(
     optionPlay.entry.premium,
     optionPlay.stopLoss.premium,
     optionPlay.target.tp2.premium,
-    quantity
+    safeQty
   );
 
-  if (isMulti) {
-    const tp1Line = formatTosNaturalOptionExitCommand(
-      optionPlay.ticker,
-      optionPlay.tosExpirationStr,
-      optionPlay.strike,
-      optionPlay.optionType,
-      optionPlay.target.tp1.premium,
-      'LMT',
-      q1
-    );
-    const sl1Line = formatTosNaturalOptionExitCommand(
-      optionPlay.ticker,
-      optionPlay.tosExpirationStr,
-      optionPlay.strike,
-      optionPlay.optionType,
-      optionPlay.stopLoss.premium,
-      'STP',
-      q1
-    );
-    const tp2Line = formatTosNaturalOptionExitCommand(
-      optionPlay.ticker,
-      optionPlay.tosExpirationStr,
-      optionPlay.strike,
-      optionPlay.optionType,
-      optionPlay.target.tp2.premium,
-      'LMT',
-      q2
-    );
-    const sl2Line = formatTosNaturalOptionExitCommand(
-      optionPlay.ticker,
-      optionPlay.tosExpirationStr,
-      optionPlay.strike,
-      optionPlay.optionType,
-      optionPlay.stopLoss.premium,
-      'STP',
-      q2
-    );
-
-    return [
-      `=== THINKORSWIM 1ST TRIGGERS 2 OCO ORDER SET (${quantity} CONTRACTS) ===`,
-      `[COMPOUND STRING]:  ${compoundString}`,
-      `------------------------------------------------------------------------`,
-      `[ROW 1 - ENTRY]:    ${entryLine}`,
-      `[ROW 2 - TP1 LMT]:  ${tp1Line}`,
-      `[ROW 3 - SL1 STP]:  ${sl1Line}  <-- (Order type MUST be STP)`,
-      `[ROW 4 - TP2 LMT]:  ${tp2Line}`,
-      `[ROW 5 - SL2 STP]:  ${sl2Line}  <-- (Order type MUST be STP)`,
-      `========================================================================`,
-      `HOW TO EXECUTE IN THINKORSWIM:`,
-      `1. Paste the [COMPOUND STRING] directly via clipboard icon (📋) in Order Entry Tools.`,
-      `2. Or paste ROW 1, set Advanced Order to '1st Triggers 2 OCO', and verify Stop rows are 'STP'.`,
-      `3. Confirm and send! Un-triggered stops will rest safely under 'Waiting Trigger'.`,
-    ].join('\n');
-  }
-
-  const tpLine = formatTosNaturalOptionExitCommand(
+  const tp1Line = formatTosNaturalOptionExitCommand(
     optionPlay.ticker,
     optionPlay.tosExpirationStr,
     optionPlay.strike,
     optionPlay.optionType,
-    optionPlay.target.tp2.premium,
+    optionPlay.target.tp1.premium,
     'LMT',
-    1
+    q1
   );
-  const slLine = formatTosNaturalOptionExitCommand(
+  const sl1Line = formatTosNaturalOptionExitCommand(
     optionPlay.ticker,
     optionPlay.tosExpirationStr,
     optionPlay.strike,
     optionPlay.optionType,
     optionPlay.stopLoss.premium,
     'STP',
-    1
+    q1
+  );
+  const tp2Line = formatTosNaturalOptionExitCommand(
+    optionPlay.ticker,
+    optionPlay.tosExpirationStr,
+    optionPlay.strike,
+    optionPlay.optionType,
+    optionPlay.target.tp2.premium,
+    'LMT',
+    q2
+  );
+  const sl2Line = formatTosNaturalOptionExitCommand(
+    optionPlay.ticker,
+    optionPlay.tosExpirationStr,
+    optionPlay.strike,
+    optionPlay.optionType,
+    optionPlay.stopLoss.premium,
+    'STP',
+    q2
   );
 
   return [
-    `=== THINKORSWIM 1ST TRIGGERS OCO ORDER SET (1 CONTRACT) ===`,
+    `=== THINKORSWIM 1ST TRIGGERS 2 OCO ORDER SET (${safeQty} CONTRACTS) ===`,
     `[COMPOUND STRING]:  ${compoundString}`,
-    `-------------------------------------------------------------`,
-    `[ROW 1 - ENTRY]:   ${entryLine}`,
-    `[ROW 2 - TP LMT]:  ${tpLine}`,
-    `[ROW 3 - SL STP]:  ${slLine}  <-- (Order type MUST be STP)`,
-    `=============================================================`,
+    `------------------------------------------------------------------------`,
+    `[ROW 1 - ENTRY]:    ${entryLine}`,
+    `[ROW 2 - TP1 LMT]:  ${tp1Line}`,
+    `[ROW 3 - SL1 STP]:  ${sl1Line}  <-- (Order type MUST be STP)`,
+    `[ROW 4 - TP2 LMT]:  ${tp2Line}`,
+    `[ROW 5 - SL2 STP]:  ${sl2Line}  <-- (Order type MUST be STP)`,
+    `========================================================================`,
     `HOW TO EXECUTE IN THINKORSWIM:`,
     `1. Paste the [COMPOUND STRING] directly via clipboard icon (📋) in Order Entry Tools.`,
-    `2. Or paste ROW 1, set Advanced Order to '1st Triggers OCO', and verify Stop row is 'STP'.`,
+    `2. Or paste ROW 1, set Advanced Order to '1st Triggers 2 OCO', and verify Stop rows are 'STP'.`,
+    `3. Confirm and send! Un-triggered stops will rest safely under 'Waiting Trigger'.`,
   ].join('\n');
 }

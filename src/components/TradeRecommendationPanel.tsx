@@ -186,9 +186,18 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
     const shares = Math.max(1, Math.floor(params.riskBudget / riskPerContractOrShare));
     const totalRiskDollars = isFuturesContract ? shares * netRiskDollars : shares * risk;
     const totalRewardDollars = isFuturesContract ? shares * netRewardDollars : shares * reward;
-    const capitalRequired = isFuturesContract
-      ? shares * (isMesContract ? 1350 : isEsContract ? 13500 : isMnqContract ? 2100 : isNqContract ? 21000 : entry)
-      : shares * entry;
+    const marginLookup: Record<string, number> = {
+      MES: 1600,
+      ES: 16000,
+      MNQ: 2500,
+      NQ: 25000,
+      RTY: 2000,
+      CL: 6500,
+      GC: 9500
+    };
+    const rootKey = cleanSym.replace('/', '').slice(0, 3);
+    const marginPerCt = marginLookup[rootKey] || 1600;
+    const capitalRequired = isFuturesContract ? shares * marginPerCt : shares * entry;
 
     const totalSpan = risk + reward;
     const riskVisualPercent = totalSpan > 0 ? Math.min(80, Math.max(12, (risk / totalSpan) * 100)) : 25;
@@ -457,6 +466,19 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                     </span>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* Institutional VWAP Value Alignment Banner */}
+            {rec.vwapConfluence && rec.vwapConfluence.scoreBonus > 0 && (
+              <div className="mb-2.5 px-2.5 py-1.5 rounded text-[11px] font-mono flex items-center justify-between border bg-amber-950/40 border-amber-500/70 text-amber-300">
+                <div className="flex items-center gap-1.5 font-bold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                  <span>⚡ Institutional VWAP: {rec.vwapConfluence.tag}</span>
+                </div>
+                <span className="text-[10px] font-semibold text-amber-300 bg-amber-900/60 px-1.5 py-0.5 rounded border border-amber-700/60">
+                  +{rec.vwapConfluence.scoreBonus}% Value Edge
+                </span>
               </div>
             )}
 
@@ -730,107 +752,60 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                   </div>
 
                   {/* Primary Universal Natural Language Compound Bracket Order */}
-                  <div className="p-2 rounded bg-slate-900/90 border border-slate-700/80 flex items-center justify-between gap-2">
-                    <div className="truncate text-sky-200 select-all font-bold text-xs" title="Complete thinkorswim 1st Triggers OCO Compound Bracket Order (Entry / SL / TP)">
+                  <div className="p-2.5 rounded-lg bg-slate-900/90 border border-slate-700/80 space-y-2">
+                    <div className="flex items-center justify-between text-[10px] text-slate-400">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-slate-500">Contract:</span>
+                        <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-200 font-mono font-semibold">
+                          {optionPlay.ticker} ${optionPlay.strike} {optionPlay.optionType}
+                        </span>
+                      </div>
+                      <span className="text-slate-500 font-mono">1st Triggers OCO</span>
+                    </div>
+
+                    <div className="p-2 rounded bg-slate-950/80 border border-slate-800/80 truncate text-sky-200 select-all font-mono font-bold text-xs" title="Complete thinkorswim 1st Triggers OCO Compound Bracket Order (Entry / SL / TP)">
                       {dynamicCompoundTosOptionCommand}
                     </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        type="button"
-                        onClick={(e) => handleCopyOrder(dynamicCompoundTosOptionCommand, `compound-${optionPlay.id}`, e)}
-                        className="px-2.5 py-1 bg-sky-600 hover:bg-sky-500 text-white rounded text-[10px] flex items-center gap-1 transition-colors font-sans font-semibold cursor-pointer shadow-sm"
-                        title="Copy full 1st Triggers OCO compound bracket order (Parent Entry + Stop Loss + Take Profit) for simultaneous 3-leg paste into ThinkorSwim"
-                      >
-                        {copiedId === `compound-${optionPlay.id}` ? (
-                          <>
-                            <Check className="w-3 h-3 text-white" />
-                            <span>Copied TOS Bracket!</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-3 h-3" />
-                            <span>Copy TOS Order</span>
-                          </>
-                        )}
-                      </button>
+
+                    {/* Prominent Primary Action Button */}
+                    <button
+                      type="button"
+                      onClick={(e) => handleCopyOrder(dynamicCompoundTosOptionCommand, `compound-${optionPlay.id}`, e)}
+                      className="w-full py-2.5 px-4 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs flex items-center justify-center gap-2 transition-all font-semibold cursor-pointer shadow-md shadow-sky-950/50 hover:shadow-sky-900/60 active:scale-[0.99]"
+                      title="Copy full 1st Triggers OCO compound bracket order (Parent Entry + Stop Loss + Take Profit) for simultaneous 3-leg paste into ThinkorSwim"
+                    >
+                      {copiedId === `compound-${optionPlay.id}` ? (
+                        <>
+                          <Check className="w-4 h-4 text-emerald-300 stroke-[2.5]" />
+                          <span className="font-bold tracking-wide">Copied TOS Bracket!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-4 h-4 text-sky-200" />
+                          <span className="tracking-wide">Copy TOS Bracket</span>
+                          <span className="text-[11px] text-sky-200/80 font-normal">({dynamicContractQty} Contract{dynamicContractQty > 1 ? 's' : ''})</span>
+                        </>
+                      )}
+                    </button>
+
+                    {/* Compact Auxiliary Links */}
+                    <div className="flex items-center justify-end gap-3 pt-0.5 text-[10px] text-slate-400">
                       <button
                         type="button"
                         onClick={(e) => handleCopyOrder(dynamicNaturalTosCommand, `natural-${optionPlay.id}`, e)}
-                        className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded text-[10px] flex items-center gap-1 transition-colors font-sans cursor-pointer"
+                        className="hover:text-sky-300 transition-colors cursor-pointer"
                         title="Copy entry leg only: BUY +N SINGLE..."
                       >
-                        {copiedId === `natural-${optionPlay.id}` ? (
-                          <>
-                            <Check className="w-3 h-3 text-sky-400" />
-                            <span>Copied Entry!</span>
-                          </>
-                        ) : (
-                          <span>Entry Only</span>
-                        )}
+                        {copiedId === `natural-${optionPlay.id}` ? '✓ Copied Entry' : 'Entry Leg Only'}
                       </button>
+                      <span className="text-slate-700">·</span>
                       <button
                         type="button"
                         onClick={(e) => handleCopyOrder(optionPlay.schwabWebSummary, `summary-${optionPlay.id}`, e)}
-                        className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded text-[10px] flex items-center gap-1 transition-colors font-sans cursor-pointer"
+                        className="hover:text-emerald-300 transition-colors cursor-pointer"
                         title="Copy complete ticket for Charles Schwab portal"
                       >
-                        {copiedId === `summary-${optionPlay.id}` ? (
-                          <>
-                            <Check className="w-3 h-3 text-emerald-400" />
-                            <span>Copied!</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-3 h-3" />
-                            <span>Schwab Ticket</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* TOS Contract & Quick Copy Strip */}
-                  <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1 border-t border-slate-800/80 text-[10px]">
-                    <div className="flex items-center gap-1">
-                      <span className="text-slate-500">Contract:</span>
-                      <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300 font-mono font-medium">
-                        {optionPlay.ticker} ${optionPlay.strike} {optionPlay.optionType}
-                      </span>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-1">
-                      <span className="text-slate-500">Exits:</span>
-                      <button
-                        type="button"
-                        onClick={(e) => handleCopyOrder(optionMetrics.stopPrem.toFixed(2), `sl-${optionPlay.id}`, e)}
-                        className="px-1.5 py-0.5 rounded bg-rose-950/80 hover:bg-rose-900 border border-rose-800 text-rose-300 cursor-pointer font-bold"
-                        title="Copy Hard Stop-Loss premium"
-                      >
-                        {copiedId === `sl-${optionPlay.id}` ? '✓' : `SL: $${optionMetrics.stopPrem.toFixed(2)}`}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => handleCopyOrder(optionPlay.target.tp1.premium.toFixed(2), `tp1-${optionPlay.id}`, e)}
-                        className="px-1.5 py-0.5 rounded bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 cursor-pointer font-bold"
-                        title="Copy TP1 premium (1:2 R:R)"
-                      >
-                        {copiedId === `tp1-${optionPlay.id}` ? '✓' : `TP1: $${optionPlay.target.tp1.premium.toFixed(2)}`}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => handleCopyOrder(optionPlay.target.tp2.premium.toFixed(2), `tp2-${optionPlay.id}`, e)}
-                        className="px-1.5 py-0.5 rounded bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 cursor-pointer font-bold"
-                        title="Copy TP2 premium (Opposing Zone)"
-                      >
-                        {copiedId === `tp2-${optionPlay.id}` ? '✓' : `TP2: $${optionPlay.target.tp2.premium.toFixed(2)}`}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => handleCopyOrder(optionPlay.target.tp3.premium.toFixed(2), `tp3-${optionPlay.id}`, e)}
-                        className="px-1.5 py-0.5 rounded bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 cursor-pointer font-bold"
-                        title="Copy TP3 premium (Trend Runner)"
-                      >
-                        {copiedId === `tp3-${optionPlay.id}` ? '✓' : `TP3: $${optionPlay.target.tp3.premium.toFixed(2)}`}
+                        {copiedId === `summary-${optionPlay.id}` ? '✓ Copied Ticket' : 'Schwab Portal Ticket'}
                       </button>
                     </div>
                   </div>
@@ -956,104 +931,60 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                   </div>
 
                   {/* Primary Order String */}
-                  <div className="p-2 rounded bg-slate-900/90 border border-slate-700/80 flex items-center justify-between gap-2">
-                    <div className="truncate text-emerald-300 select-all font-bold text-xs" title="Complete thinkorswim 1st Triggers OCO Compound Bracket Order (Entry / Stop / Target)">
+                  <div className="p-2.5 rounded-lg bg-slate-900/90 border border-slate-700/80 space-y-2">
+                    <div className="flex items-center justify-between text-[10px] text-slate-400">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-slate-500">Symbol:</span>
+                        <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-200 font-mono font-semibold">
+                          {isFuturesContract && !cleanSym.startsWith('/') ? `/${cleanSym}` : cleanSym}
+                        </span>
+                      </div>
+                      <span className="text-slate-500 font-mono">1st Triggers OCO Bracket</span>
+                    </div>
+
+                    <div className="p-2 rounded bg-slate-950/80 border border-slate-800/80 truncate text-emerald-300 select-all font-mono font-bold text-xs" title="Complete thinkorswim 1st Triggers OCO Compound Bracket Order (Entry / Stop / Target)">
                       {dynamicCompoundStockOrFuturesCommand}
                     </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        type="button"
-                        onClick={(e) => handleCopyOrder(dynamicCompoundStockOrFuturesCommand, `stock-cmd-${rec.id}`, e)}
-                        className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[10px] flex items-center gap-1 transition-colors font-sans font-semibold cursor-pointer shadow-sm"
-                        title="Copy complete 1st Triggers OCO compound bracket order (Parent Entry + Child Stop Loss + Child Take Profit) so ThinkorSwim pastes all 3 legs simultaneously"
-                      >
-                        {copiedId === `stock-cmd-${rec.id}` ? (
-                          <>
-                            <Check className="w-3 h-3 text-white" />
-                            <span>Copied TOS Bracket!</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-3 h-3" />
-                            <span>Copy TOS Order</span>
-                          </>
-                        )}
-                      </button>
+
+                    {/* Prominent Primary Action Button */}
+                    <button
+                      type="button"
+                      onClick={(e) => handleCopyOrder(dynamicCompoundStockOrFuturesCommand, `stock-cmd-${rec.id}`, e)}
+                      className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs flex items-center justify-center gap-2 transition-all font-semibold cursor-pointer shadow-md shadow-emerald-950/50 hover:shadow-emerald-900/60 active:scale-[0.99]"
+                      title="Copy complete 1st Triggers OCO compound bracket order (Parent Entry + Child Stop Loss + Child Take Profit) so ThinkorSwim pastes all 3 legs simultaneously"
+                    >
+                      {copiedId === `stock-cmd-${rec.id}` ? (
+                        <>
+                          <Check className="w-4 h-4 text-emerald-200 stroke-[2.5]" />
+                          <span className="font-bold tracking-wide">Copied TOS Bracket!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-4 h-4 text-emerald-100" />
+                          <span className="tracking-wide">Copy TOS Bracket</span>
+                          <span className="text-[11px] text-emerald-200/80 font-normal">({isFuturesContract ? `${metrics.shares} Contract${metrics.shares > 1 ? 's' : ''}` : `${metrics.shares} Shares`})</span>
+                        </>
+                      )}
+                    </button>
+
+                    {/* Compact Auxiliary Links */}
+                    <div className="flex items-center justify-end gap-3 pt-0.5 text-[10px] text-slate-400">
                       <button
                         type="button"
                         onClick={(e) => handleCopyOrder(dynamicStockTosCommand, `stock-entry-${rec.id}`, e)}
-                        className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded text-[10px] flex items-center gap-1 transition-colors font-sans cursor-pointer"
+                        className="hover:text-emerald-300 transition-colors cursor-pointer"
                         title="Copy entry leg only: BUY +N..."
                       >
-                        {copiedId === `stock-entry-${rec.id}` ? (
-                          <>
-                            <Check className="w-3 h-3 text-emerald-400" />
-                            <span>Copied Entry!</span>
-                          </>
-                        ) : (
-                          <span>Entry Only</span>
-                        )}
+                        {copiedId === `stock-entry-${rec.id}` ? '✓ Copied Entry' : 'Entry Leg Only'}
                       </button>
+                      <span className="text-slate-700">·</span>
                       <button
                         type="button"
                         onClick={(e) => handleCopyOrder(dynamicStockSchwabSummary, `stock-schwab-${rec.id}`, e)}
-                        className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded text-[10px] flex items-center gap-1 transition-colors font-sans cursor-pointer"
+                        className="hover:text-emerald-300 transition-colors cursor-pointer"
                         title="Copy complete ticket for Charles Schwab portal"
                       >
-                        {copiedId === `stock-schwab-${rec.id}` ? (
-                          <>
-                            <Check className="w-3 h-3 text-emerald-400" />
-                            <span>Copied!</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-3 h-3" />
-                            <span>Schwab Ticket</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Quick Targets Copy Strip */}
-                  <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1 border-t border-slate-800/80 text-[10px]">
-                    <div className="flex items-center gap-1">
-                      <span className="text-slate-500">Symbol:</span>
-                      <button
-                        type="button"
-                        onClick={(e) => handleCopyOrder(isFuturesContract && !cleanSym.startsWith('/') ? `/${cleanSym}` : cleanSym, `sym-stock-${rec.id}`, e)}
-                        className="px-1.5 py-0.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 cursor-pointer font-mono font-bold"
-                        title="Copy symbol only"
-                      >
-                        {copiedId === `sym-stock-${rec.id}` ? '✓ Copied' : isFuturesContract && !cleanSym.startsWith('/') ? `/${cleanSym}` : cleanSym}
-                      </button>
-                    </div>
-
-                    <div className="flex items-center gap-1">
-                      <span className="text-slate-500">Bracket:</span>
-                      <button
-                        type="button"
-                        onClick={(e) => handleCopyOrder(params.entry.toFixed(2), `ent-stk-${rec.id}`, e)}
-                        className="px-1.5 py-0.5 rounded bg-sky-950/80 hover:bg-sky-900 border border-sky-800 text-sky-300 cursor-pointer font-bold"
-                        title="Copy Entry limit price"
-                      >
-                        {copiedId === `ent-stk-${rec.id}` ? '✓' : `LMT: $${params.entry.toFixed(2)}`}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => handleCopyOrder(params.stopLoss.toFixed(2), `sl-stk-${rec.id}`, e)}
-                        className="px-1.5 py-0.5 rounded bg-rose-950/80 hover:bg-rose-900 border border-rose-800 text-rose-300 cursor-pointer font-bold"
-                        title="Copy Stop-Loss price"
-                      >
-                        {copiedId === `sl-stk-${rec.id}` ? '✓' : `SL: $${params.stopLoss.toFixed(2)}`}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => handleCopyOrder(params.target.toFixed(2), `tp-stk-${rec.id}`, e)}
-                        className="px-1.5 py-0.5 rounded bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 cursor-pointer font-bold"
-                        title="Copy Target price"
-                      >
-                        {copiedId === `tp-stk-${rec.id}` ? '✓' : `TP: $${params.target.toFixed(2)}`}
+                        {copiedId === `stock-schwab-${rec.id}` ? '✓ Copied Ticket' : 'Schwab Portal Ticket'}
                       </button>
                     </div>
                   </div>
@@ -1362,13 +1293,16 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
               )}
             </div>
 
-            {/* Bottom Actions */}
-            <div className="flex items-center justify-between pt-2.5 mt-2 border-t border-slate-800/70">
-              <span className="text-[10px] text-slate-500 font-mono">
-                {viewMode === 'options' ? 'Targeting TP on underlying zone' : `Risk: $${metrics.risk.toFixed(2)}/sh`}
-              </span>
-
-              <div className="flex items-center gap-1.5 flex-wrap justify-end">
+            {/* Bottom Actions: Lean Auxiliary Row */}
+            <div className="flex items-center justify-between pt-2.5 mt-2 border-t border-slate-800/70 gap-2">
+              <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono truncate">
+                <span>
+                  {viewMode === 'options'
+                    ? 'Targeting TP on underlying zone'
+                    : isFuturesContract
+                    ? `Margin Req: ~$${metrics.capitalRequired.toLocaleString()}`
+                    : `Risk: $${metrics.risk.toFixed(2)}/sh`}
+                </span>
                 {onOpenTosModal && (
                   <button
                     type="button"
@@ -1377,11 +1311,10 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                       onSelectRecommendation(effectiveRec);
                       onOpenTosModal(effectiveRec);
                     }}
-                    className="px-2 py-1 text-[11px] font-semibold text-emerald-300 hover:text-white bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-800/80 rounded transition-colors flex items-center gap-1 cursor-pointer"
-                    title="Post order into thinkorswim via clipboard"
+                    className="text-slate-400 hover:text-emerald-300 underline decoration-dotted transition-colors cursor-pointer"
+                    title="Open thinkorswim modal"
                   >
-                    <Terminal className="w-3 h-3 text-emerald-400" />
-                    <span>Post to TOS</span>
+                    TOS Dialog
                   </button>
                 )}
                 {onOpenOptionsTab && (
@@ -1392,12 +1325,27 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                       onSelectRecommendation(effectiveRec);
                       onOpenOptionsTab();
                     }}
-                    className="px-2 py-1 text-[11px] font-semibold text-sky-300 hover:text-white bg-sky-950/80 hover:bg-sky-900 border border-sky-800/80 rounded transition-colors flex items-center gap-1 cursor-pointer"
+                    className="text-slate-400 hover:text-sky-300 underline decoration-dotted transition-colors cursor-pointer"
+                    title="Open Schwab Trader"
                   >
-                    <span>Schwab Trader</span>
-                    <ExternalLink className="w-3 h-3" />
+                    Schwab Tab
                   </button>
                 )}
+              </div>
+
+              {/* Auxiliary Actions Group */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectRecommendation(effectiveRec);
+                  }}
+                  className="px-2.5 py-1 text-[11px] font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700/60 rounded transition-colors cursor-pointer"
+                  title="Focus chart on this setup zone"
+                >
+                  View Chart
+                </button>
                 {onLogToJournal && (
                   <button
                     type="button"
@@ -1406,39 +1354,29 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                       onSelectRecommendation(effectiveRec);
                       onLogToJournal(effectiveRec);
                     }}
-                    className="px-2 py-1 text-[11px] font-semibold text-amber-300 hover:text-white bg-amber-950/80 hover:bg-amber-900 border border-amber-800/80 rounded transition-colors flex items-center gap-1 cursor-pointer"
+                    className="px-2.5 py-1 text-[11px] font-semibold text-amber-300 hover:text-white bg-amber-950/70 hover:bg-amber-900 border border-amber-800/70 rounded transition-colors flex items-center gap-1 cursor-pointer"
                     title="Log trade setup to Trading Journal"
                   >
                     <BookOpen className="w-3 h-3 text-amber-400" />
-                    <span>Journal</span>
+                    <span>Log Journal</span>
                   </button>
                 )}
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    onSelectRecommendation(effectiveRec);
-                  }}
-                  className="px-2 py-1 text-[11px] font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded transition-colors cursor-pointer"
-                >
-                  View Chart
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
                     onSimulateOrder(effectiveRec);
                   }}
-                  className={`px-2 py-1 text-[11px] font-medium rounded transition-colors cursor-pointer ${
+                  className={`px-3 py-1 text-[11px] font-semibold rounded transition-colors cursor-pointer flex items-center gap-1 ${
                     isDormant
-                      ? 'text-amber-300 bg-amber-950/80 hover:bg-amber-900 border border-amber-700/80 font-bold'
+                      ? 'text-amber-300 bg-amber-950/80 hover:bg-amber-900 border border-amber-700/80'
                       : rec.proximityPhase?.includes('Phase B')
-                      ? 'text-emerald-300 bg-emerald-950/90 hover:bg-emerald-900 border border-emerald-500 font-bold shadow-sm shadow-emerald-900'
+                      ? 'text-emerald-200 bg-emerald-600 hover:bg-emerald-500 border border-emerald-400 shadow-sm shadow-emerald-950 font-bold'
                       : 'text-emerald-300 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-800/80'
                   }`}
                   title={isDormant ? "Price is dormant in no-man's land (>1.5x ATR away). Kept staged until price retests the proximal line." : "Arm OCO bracket order"}
                 >
-                  {isDormant ? '⏸ Staged (Awaiting Retest)' : rec.proximityPhase?.includes('Phase B') ? '🔥 Arm Order' : 'Stage Trade'}
+                  {isDormant ? '⏸ Staged' : rec.proximityPhase?.includes('Phase B') ? '🔥 Arm Order' : 'Stage Trade'}
                 </button>
               </div>
             </div>

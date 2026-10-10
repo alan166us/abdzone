@@ -80,6 +80,7 @@ export function generateTradeRecommendations(
       proximityPhase: zone.proximityPhase || 'Dormant (>1.5x ATR)',
       distanceInAtr: zone.distanceInAtr,
       opposingZoneId: overheadSupply?.id,
+      vwapConfluence: zone.vwapConfluence,
       rationale: `S.E.T. Long Plan: [Setup: ${zone.pattern} Demand Zone ($${zone.low.toFixed(2)} - $${zone.high.toFixed(2)}) · ${tags}]. [Entry: Aggressive at Proximal $${entry.toFixed(2)} / Conservative 50% Midline at $${conservativeEntry.toFixed(2)}]. [Stop: Hard SL at Distal - ${(bufferMultiplier).toFixed(2)}x ATR ($${stopLoss.toFixed(2)})]. [Targets: TP1 at 1:2 R:R ($${tp1.toFixed(2)}) · TP2 at Opposing Supply Proximal ($${tp2.toFixed(2)})]. 3-Bar Rule: If price consolidates inside base for >3-5 bars without rejection, flatten at breakeven.`,
       currentDistancePercent: distancePercent,
     });
@@ -130,6 +131,7 @@ export function generateTradeRecommendations(
       proximityPhase: zone.proximityPhase || 'Dormant (>1.5x ATR)',
       distanceInAtr: zone.distanceInAtr,
       opposingZoneId: lowerDemand?.id,
+      vwapConfluence: zone.vwapConfluence,
       rationale: `S.E.T. Short Plan: [Setup: ${zone.pattern} Supply Zone ($${zone.low.toFixed(2)} - $${zone.high.toFixed(2)}) · ${tags}]. [Entry: Aggressive at Proximal $${entry.toFixed(2)} / Conservative 50% Midline at $${conservativeEntry.toFixed(2)}]. [Stop: Hard SL at Distal + ${(bufferMultiplier).toFixed(2)}x ATR ($${stopLoss.toFixed(2)})]. [Targets: TP1 at 1:2 R:R ($${tp1.toFixed(2)}) · TP2 at Opposing Demand Proximal ($${tp2.toFixed(2)})]. 3-Bar Rule: If price consolidates inside base for >3-5 bars without rejection, flatten at breakeven.`,
       currentDistancePercent: distancePercent,
     });
