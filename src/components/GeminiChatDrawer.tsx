@@ -42,12 +42,14 @@ interface GeminiChatDrawerProps {
 }
 
 const INITIAL_PROMPTS = [
-  '🤝 What is our daily cashflow plan with limited risk?',
-  '🛡️ How do defined-risk spreads protect my downside here?',
-  '⏳ How does Theta time decay pay us daily rent?',
-  '🎯 Why do we lock in 50% profit early instead of waiting?',
-  '📖 What is the market background story behind this move?',
-  '⚡ Walk me through Delta & Probability of Profit (POP)',
+  '🤔 Why wait for wholesale instead of buying right now?',
+  '🛡️ What is the decision-making logic behind this stop buffer?',
+  '⚠️ What specific price action invalidates this setup and proves us wrong?',
+  '🎯 Why lock in 50% profit early instead of waiting for full target?',
+  '⚖️ Walk me through the trade-offs: Credit Spreads vs Outrights',
+  '🤝 What is our daily cashflow plan with strictly limited risk?',
+  '⏳ How does Theta time decay pay us daily rent while we wait?',
+  '📊 How does our heuristic quality score rate this setup?',
 ];
 
 export const GeminiChatDrawer: React.FC<GeminiChatDrawerProps> = ({
@@ -62,7 +64,7 @@ export const GeminiChatDrawer: React.FC<GeminiChatDrawerProps> = ({
   initialMessage,
   initialRole = 'daily_coach',
 }) => {
-  const [selectedModel, setSelectedModel] = useState<'gemini-3.5-flash' | 'gemini-3.1-pro-preview' | 'gemini-3.1-flash-lite'>('gemini-3.5-flash');
+  const [selectedModel, setSelectedModel] = useState<'gemini-3.8-flash' | 'gemini-3.1-pro-preview' | 'gemini-3.1-flash-lite'>('gemini-3.8-flash');
   const [selectedRole, setSelectedRole] = useState<'daily_coach' | 'quant' | 'risk_architect' | 'fast_scalp'>(initialRole);
   const [languageMode, setLanguageMode] = useState<'daily' | 'quant'>('daily');
   const [dailyCashflowGoal, setDailyCashflowGoal] = useState<number>(250);
@@ -73,7 +75,7 @@ export const GeminiChatDrawer: React.FC<GeminiChatDrawerProps> = ({
     {
       id: 'welcome',
       role: 'model',
-      content: `Hello Partner! I am your real-time **Options Trading Coach & Partner**.\n\nWe are here to **make money together** with a crystal-clear mission: **steady daily cashflow with strictly limited downturn risk**.\n\nI have live visibility into **${symbol}** trading at **$${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** with an ATR swing of **$${volatilityMetrics?.atr?.toFixed(2) || 'N/A'}** and **${zones.length} active zones**.\n\nI speak in **clear daily language** and bring deep options expertise to our partnership:\n* **Theta Time Decay:** Harvesting daily option decay as reliable income\n* **Defined-Risk Spreads:** Buying protective wings so maximum loss is 100% capped\n* **The 50% Profit Rule:** Taking cash off the table early and recycling capital\n* **Market Story & Background:** Explaining exactly why buyers or sellers are moving price right now\n\nHow should we tackle today's cashflow target?`,
+      content: `Hello Partner! I am your real-time **Options Trading Coach & Partner**.\n\nWe are here to **discuss decision making, trade-offs, and build steady daily cashflow together** with strictly limited downside risk.\n\nI have live visibility into **${symbol}** trading at **$${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** with an ATR swing of **$${volatilityMetrics?.atr?.toFixed(2) || 'N/A'}** and **${zones.length} active zones**.\n\n**Let's have a real conversation about the "why":**\n* **Wholesale Entries:** Why we refuse to chase in no-man's land and wait for institutional bases\n* **Stop Buffers:** Why we pad stops with ATR cushions against market-maker stop hunts\n* **Theta Cashflow & Spreads:** How time decay pays us rent and spread wings cap our downside to the penny\n* **The 50% Profit Rule:** Locking in gains early and recycling buying power\n\nWhat setup or decision on the chart do you want to talk through?`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     },
   ]);
@@ -334,9 +336,9 @@ export const GeminiChatDrawer: React.FC<GeminiChatDrawerProps> = ({
             }}
             className="bg-slate-900 border border-slate-700/80 rounded px-1.5 py-0.5 text-slate-200 focus:outline-none focus:border-emerald-500 cursor-pointer text-[10px]"
           >
-            <option value="gemini-3.5-flash">gemini-3.5-flash (General Tasks)</option>
-            <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview (Complex Tasks)</option>
-            <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite (Fast Tasks)</option>
+            <option value="gemini-3.8-flash">gemini-3.8-flash (General Tasks / Q&A)</option>
+            <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview (Complex Tasks / Deep Reasoning)</option>
+            <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite (Fast Tasks / Scalping)</option>
           </select>
         </div>
 
@@ -354,7 +356,7 @@ export const GeminiChatDrawer: React.FC<GeminiChatDrawerProps> = ({
             <span>🤝 Coach &amp; Partner</span>
           </button>
           <button
-            onClick={() => { setSelectedRole('quant'); setSelectedModel('gemini-3.5-flash'); }}
+            onClick={() => { setSelectedRole('quant'); setSelectedModel('gemini-3.8-flash'); }}
             className={`px-1.5 py-0.5 rounded transition-colors ${
               selectedRole === 'quant'
                 ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 font-semibold'

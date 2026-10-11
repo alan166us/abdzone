@@ -58,8 +58,15 @@ async function startServer() {
 
       let prompt = '';
       if (isDaily) {
-        prompt = `You are a friendly, experienced Senior Trading Coach speaking to an active trader in everyday, natural daily language.
-Do NOT use dense academic jargon or unexplained acronyms. Explain chart dynamics using intuitive real-world analogies (e.g. floors, ceilings, trampolines, wholesale discounts, and breathing room).
+        prompt = `You are the user's dedicated trading partner and options coach in the trenches together.
+Your mission is simple: build steady daily/weekly cashflow while protecting capital with strictly defined downside risk.
+
+TONE & STYLE:
+- Speak in warm, authentic, clear, and encouraging conversational English (like two focused partners reviewing the desk together).
+- Zero robotic setups, stiff corporate jargon, or fake hype. Speak with humble confidence and candid clarity.
+- Ground every insight directly in live market numbers (Spot, ATR, Zone Boundaries).
+- Use clear, vivid, everyday analogies (wholesale sale vs retail chase, trampolines, giving trades breathing room).
+- Format responses cleanly with short paragraphs, bold key prices, and actionable bullet points.
 
 LIVE MARKET DATA:
 Asset: ${symbol} (${timeframe})
@@ -77,21 +84,21 @@ ${JSON.stringify(zones?.filter((z: any) => z.type === 'supply')?.slice(0, 3) || 
 Recommended Trade Setups:
 ${JSON.stringify(recommendations || [], null, 2)}
 
-Please write an engaging, easy-to-read briefing structured in clean Markdown:
+Please write an engaging, partner-to-partner briefing structured in clean Markdown:
 ### 1. 📖 The Market Story: What Just Happened?
-Tell the story of what this stock/asset has been doing recently. Explain who is currently driving the action (aggressive buyers, exhausted sellers, or a tug-of-war) and why price is at this exact level.
+Tell the story of what this asset has been doing recently. Explain who is currently driving the action (aggressive buyers, exhausted sellers, or a tug-of-war) and why price is at this exact level.
 
 ### 2. 🎯 The Setup & The "Why" Behind the Entry
-Explain what trade is being recommended (Call/Long vs Put/Short). Explain in everyday language WHY we wait for this entry price (getting a wholesale discount rather than chasing the market).
+Explain what trade is being recommended (Call/Long vs Put/Short). Explain in everyday language WHY we wait for this entry price (getting a wholesale discount rather than chasing the market in no-man's land).
 
 ### 3. 🛡️ The "Why" Behind the Stop-Loss (Breathing Room)
 Explain why the stop-loss is placed at this exact distance. Explain how normal market noise/wiggles work and why giving it extra cushion keeps us from getting unfairly kicked out before the move happens.
 
 ### 4. 🏁 The "Why" Behind the Profit Targets
-Explain where we plan to take profit and why. (e.g. First target pays for the trade, second target reaches where previous sellers showed up, third target is the runner).
+Explain where we plan to take profit and why (Target 1 locks in 50% profit and risk-free breakeven, Target 2 sits before opposing supply, Target 3 is the runner).
 
-### 5. ☕ Plain English Checklist for Today
-Give 2-3 simple, actionable tips on what the trader should do next (e.g. "Don't rush in right now; be patient and let price come to $X", "If it breaks below $Y, the idea is off the table, walk away").`;
+### 5. 🤝 Partner Checklist for Today
+Give 2-3 simple, actionable tips on what we do next (patience for wholesale entry, OCO bracket execution, respecting the stop).`;
       } else {
         prompt = `You are a Chief Market Technician and quantitative Order Flow / SMC (Smart Money Concepts) analyst.
 Analyze the following asset snapshot and supply/demand zone structures:
@@ -162,7 +169,7 @@ Keep the prose crisp, authoritative, formatted in clean Markdown, without market
 
     const apiKey = process.env.GEMINI_API_KEY;
 
-    let chosenModel = 'gemini-3.5-flash';
+    let chosenModel = 'gemini-3.8-flash';
     if (model === 'gemini-3.1-pro-preview' || role === 'risk_architect') {
       chosenModel = 'gemini-3.1-pro-preview';
     } else if (model === 'gemini-3.1-flash-lite' || role === 'fast_scalp') {
@@ -207,13 +214,13 @@ CORE MENTAL MODELS:
           },
         });
 
-        const systemInstruction = `You are StrataZone's institutional AI Market Copilot configured as: ${activePersona} (Running on ${chosenModel}).
-You are in a multi-turn conversation with an active trader reviewing the chart terminal. Maintain full conversation context and answer questions directly.
+        const systemInstruction = `You are StrataZone's interactive AI Trading Partner & Options Coach: ${activePersona} (Running on ${chosenModel}).
+You and the user are collaborating live at the trading desk in an interactive multi-turn conversation.
 
 LIVE MARKET SNAPSHOT:
-- Active Asset: ${marketContext?.symbol || 'BTC/USDT'} (${marketContext?.timeframe || '1H'})
+- Active Asset: ${marketContext?.symbol || 'Asset'} (${marketContext?.timeframe || '1H'})
 - Current Spot Price: $${marketContext?.currentPrice}
-- Average Swing ATR(14): $${marketContext?.volatilityMetrics?.atr?.toFixed(2)} (${marketContext?.volatilityMetrics?.atrPercent?.toFixed(2)}%)
+- Average Bar Swing ATR(14): $${marketContext?.volatilityMetrics?.atr?.toFixed(2)} (${marketContext?.volatilityMetrics?.atrPercent?.toFixed(2)}%)
 - Volatility Regime: ${marketContext?.volatilityMetrics?.regime}
 - Stop-Loss Buffer Multiplier: ${marketContext?.volatilityMetrics?.recommendedBufferMultiplier?.toFixed(2)}x ATR
 - Active Supply & Demand Zones:
@@ -221,11 +228,16 @@ ${JSON.stringify(marketContext?.zones?.slice(0, 5) || [], null, 2)}
 - Active Recommendations:
 ${JSON.stringify(marketContext?.recommendations || [], null, 2)}
 
-INSTRUCTIONS:
-1. When asked about recommendations, setups, or market movement, speak in conversational daily language, explain the market background story, and clearly explain the "why" behind the numbers.
-2. Ground your analysis strictly on the actual numbers provided in the snapshot above.
-3. In multi-turn dialogue, maintain context from earlier turns while incorporating live market variables.
-4. Keep formatting clean in Markdown with bold key numbers and bullet points.`;
+CONVERSATIONAL GUIDELINES & DECISION-MAKING DISCUSSION:
+1. BE A REAL TRADING PARTNER, NOT A ROBOT: Talk like two experienced traders reviewing setups side-by-side. Answer whatever the user actually asks directly, naturally, and thoughtfully.
+2. NO RIGID BOILERPLATE TEMPLATES: NEVER dump a repetitive 4-part form or cookie-cutter headers (e.g. "1. Executive Bias, 2. Demand Efficacy...") unless the user explicitly requests a formal written report. Engage in dynamic conversational discourse!
+3. DEEPLY EXPLORE THE "WHY" BEHIND DECISIONS:
+   - Why this entry price: Contrast getting a wholesale discount at the institutional base vs retail chasing in "no-man's land" at current spot ($${marketContext?.currentPrice}).
+   - Why this stop-loss: Explain why the volatility cushion (${marketContext?.volatilityMetrics?.recommendedBufferMultiplier?.toFixed(2)}x ATR) prevents getting shaken out by institutional liquidity sweeps.
+   - Why these targets & the 50% rule: Explain why locking in 50% profit at TP1 creates a free-roll trade and why taking money off the table before overhead supply walls preserves expectancy.
+   - Invalidation criteria: Detail what specific price action tells us our thesis failed and when to step aside without regret.
+4. DEBATE TRADE-OFFS & SCENARIOS: If the user asks "Should I take this trade?" or "Why wait?", weigh the pros and cons openly (e.g. limit order vs market entry, defined-risk credit spread vs outright directional contract, tight stop vs breathing room).
+5. DIALOGUE CONTINUITY: Build on previous turns in the conversation. Ask for the user's perspective, validate their intuition, and guide them with sharp risk management.`;
 
         // Format multi-turn history
         const formattedHistory = messages.slice(0, -1).map((m: any) => ({
@@ -233,7 +245,7 @@ INSTRUCTIONS:
           parts: [{ text: m.content }],
         }));
 
-        const lastMessage = messages[messages.length - 1]?.content || 'What is the current market structure?';
+        const lastMessage = messages[messages.length - 1]?.content || 'What is our current decision-making game plan on this chart?';
 
         const chat = ai.chats.create({
           model: chosenModel,
@@ -261,114 +273,130 @@ INSTRUCTIONS:
       }
     }
 
-    // High fidelity fallback stream for offline / unkeyed simulation
+    // High fidelity conversational reasoning fallback engine
     const lastUserQuery = (messages[messages.length - 1]?.content || '').toLowerCase();
     const symbol = marketContext?.symbol || 'Asset';
     const price = marketContext?.currentPrice || 100;
-    const atr = marketContext?.volatilityMetrics?.atr?.toFixed(2) || '2.50';
-    const multiplier = marketContext?.volatilityMetrics?.recommendedBufferMultiplier?.toFixed(2) || '1.35';
+    const atrNum = marketContext?.volatilityMetrics?.atr || (price * 0.015);
+    const atr = atrNum.toFixed(2);
+    const multNum = marketContext?.volatilityMetrics?.recommendedBufferMultiplier || 1.35;
+    const multiplier = multNum.toFixed(2);
+    const bufferVal = (atrNum * multNum).toFixed(2);
     const primaryRec = marketContext?.recommendations?.[0];
-
-    const isDailyMode = role === 'daily_coach' || languageStyle === 'daily' || lastUserQuery.includes('plain') || lastUserQuery.includes('daily') || lastUserQuery.includes('story') || lastUserQuery.includes('why');
+    const freshDemand = marketContext?.zones?.find((z: any) => z.type === 'demand' && (z.testedCount === 0 || !z.isMitigated));
+    const freshSupply = marketContext?.zones?.find((z: any) => z.type === 'supply' && (z.testedCount === 0 || !z.isMitigated));
 
     let fallbackText = '';
 
-    if (isDailyMode) {
-      if (lastUserQuery.includes('cashflow') || lastUserQuery.includes('income') || lastUserQuery.includes('partner') || lastUserQuery.includes('coach') || lastUserQuery.includes('downside') || lastUserQuery.includes('theta') || lastUserQuery.includes('option') || lastUserQuery.includes('money')) {
-        fallbackText = `### 🤝 Options Partner Briefing: Daily Cashflow with Limited Downturn Risk on ${symbol}
+    // Contextual conversational matching based on what the user is specifically discussing
+    if (
+      lastUserQuery.includes('why') && (lastUserQuery.includes('entry') || lastUserQuery.includes('wait') || lastUserQuery.includes('buy now') || lastUserQuery.includes('chase') || lastUserQuery.includes('enter') || lastUserQuery.includes('level'))
+    ) {
+      // Discussing Entry Decision & Patience vs Chasing
+      fallbackText = `Hey partner, that's the most critical question on the desk today: **why are we waiting instead of jumping in right here at $${price.toLocaleString()}?**
 
-Partner, here is our game plan to generate steady cashflow while keeping our principal completely protected:
+Here is the exact decision-making logic:
 
----
+Right now, ${symbol} is floating in what traders call **'no-man's land'**. If you market buy or sell right here, you are paying full retail markup with zero structural safety net beneath your feet. If the market pulls back just **$${atr}** (one average bar's swing), your position is immediately underwater, and you have no idea whether it's normal noise or a reversal.
 
-### 1. 💰 The Daily Cashflow Engine: Theta Time Decay
-* **How We Get Paid:** When we sell out-of-the-money credit spreads below strong demand support (Bull Put Spread) or above supply resistance (Bear Call Spread), **time decay (Theta)** is our daily income engine.
-* **Every Day Counts:** Every hour that passes with price staying above our floor, the option premium decays, putting cash directly into our pocket.
-* **Probability of Profit (POP):** By selling around **0.20 to 0.30 Delta**, the statistical odds of finishing in profit are **75% to 85%**.
+${primaryRec ? `By waiting for **$${primaryRec.entry.toFixed(2)}**, we are doing two things:
+1. **Buying at wholesale:** We are waiting for price to retest where big institutional buyers previously committed heavy capital. That level acts like an elastic trampoline.
+2. **Asymmetric risk-to-reward:** Entering at **$${primaryRec.entry.toFixed(2)}** keeps our stop at **$${primaryRec.stopLoss.toFixed(2)}** (a defined risk of just **$${primaryRec.riskPerUnit.toFixed(2)}** per unit) while unlocking **$${(primaryRec.takeProfit1 - primaryRec.entry).toFixed(2)}** of clean runway to Target 1.` : `By waiting for price to tag a pristine institutional order base, we ensure we only commit capital when the risk-to-reward is skewed heavily in our favor.`}
 
----
+Think of it like shopping: you wouldn't pay full price for merchandise when you know a wholesale shipment is arriving at the loading dock. Let's let the market do the heavy lifting and bring the price to us. Does that make sense, or were you looking at a faster scalping entry on a lower timeframe?`;
 
-### 2. 🛡️ How We Rigorously Limit Downside Risk
-* **No Naked Calls/Puts:** We never take on open-ended downside risk. We always buy a protective leg $2 to $5 further out (the "wing").
-* **Pre-Determined Max Loss:** Our maximum possible loss is mathematically capped before we ever click 'Submit'. Even in a market flash-crash, you can never lose more than the spread width minus credit collected.
-* **ATR Cushion & Underlying Stop:** We set an alert or stop at the underlying stock level ($${primaryRec ? primaryRec.stopLoss.toFixed(2) : (price * 0.98).toFixed(2)}), exiting before max loss is ever approached.
+    } else if (
+      lastUserQuery.includes('stop') || lastUserQuery.includes('buffer') || lastUserQuery.includes('cushion') || lastUserQuery.includes('liquidity sweep') || lastUserQuery.includes('shakeout')
+    ) {
+      // Discussing Stop-Loss & Volatility Buffer Decision
+      fallbackText = `Let's dig into the math behind the stop-loss buffer, because this is where 90% of retail traders get chopped up.
 
----
+On ${symbol}, our average bar movement (ATR) is running at **$${atr}**. When retail traders see a support floor, they almost universally stick their stop order 5 cents below the obvious line.
 
-### 3. 🎯 The Golden "50% Profit" Rule
-* **Don't Be Greedy:** We don't hold to expiration Friday just to chase the last nickel when wild gamma wiggles can bite.
-* **Bank & Recycle:** As soon as our spread reaches **50% of maximum profit** (e.g. collected $1.50 credit, now trading at $0.75), we buy to close, lock in the gains, and free up buying power for the next trade.
+Here's why that's a trap:
+* Institutional algorithms know exactly where those stops cluster. They routinely run a quick flush right through the line to scoop up sell liquidity before rocketing the price back up.
+* That's why we don't put our stop at the obvious edge. We add a **${multiplier}x ATR cushion** (giving the trade **+$${bufferVal}** of breathing room).
+${primaryRec ? `* This anchors our stop safely down at **$${primaryRec.stopLoss.toFixed(2)}**.` : ''}
 
----
+The decision rule is simple: **we only exit if our core thesis is truly broken**, not just because market makers decided to trigger a temporary wick. How does that stop distance feel relative to your position sizing?`;
 
-### 4. 📋 Today's Execution Checklist for ${symbol}:
-* **Current Spot:** $${price.toLocaleString()} · **ATR Swing:** $${atr}
-* **Directional Bias:** ${primaryRec?.side === 'short' ? 'Bearish Retest / Bear Call Spread' : 'Bullish Support / Bull Put Spread'}
-* **Action:** Wait for price to touch the active zone before opening; place defined-risk bracket order on Thinkorswim or Schwab.`;
-      } else if (lastUserQuery.includes('buffer') || lastUserQuery.includes('stop') || lastUserQuery.includes('cushion')) {
-        fallbackText = `### 🛡️ Why Does the Stop-Loss Need Breathing Room on ${symbol}?
+    } else if (
+      lastUserQuery.includes('invalidate') || lastUserQuery.includes('fail') || lastUserQuery.includes('wrong') || lastUserQuery.includes('risk') || lastUserQuery.includes('what if')
+    ) {
+      // Discussing Trade Invalidation & What Proves Us Wrong
+      fallbackText = `I love that you're asking this, partner. Professional trading isn't about guessing the future—it's about knowing your exact invalidation point before you ever click 'buy'.
 
-Let's explain this in plain English:
+Here is what would prove our thesis on ${symbol} wrong:
 
-1. **The Problem With Tight Stops:** If your stop-loss sits right at the obvious edge of a support line, you are an easy target. Market makers and algorithms routinely push prices a fraction beyond key levels just to trigger stops and scoop up liquidity.
-2. **The "Breathing Room" Cushion:** With an average bar swing (ATR) of **$${atr}** and a **${multiplier}x multiplier**, we add **$${(parseFloat(atr) * parseFloat(multiplier)).toFixed(2)}** of extra padding.
-3. **The Result:** Normal market noise won't kick you out before the rally happens. The stop only triggers when the idea is truly broken.`;
-      } else if (lastUserQuery.includes('target') || lastUserQuery.includes('profit')) {
-        fallbackText = `### 🎯 Why Are These Profit Targets Chosen?
+1. **A Candle Body Close Beyond Structure:** If a 1-hour candle closes decisively through ${primaryRec ? `**$${primaryRec.stopLoss.toFixed(2)}**` : `our buffer level`}, the institutional defense has failed. We don't hope, pray, or average down. We cut the position immediately.
+2. **Aggressive Institutional ERC Breakdown:** If price barrels into the zone on explosive volume with long-bodied red candles (no indecision wicks or rejection tails), that tells us sellers are overwhelming the bid book. In that case, we cancel pending limit orders.
+3. **The Defined-Risk Safety Net:** If you are running an options credit spread, our protective wings guarantee that even in a worst-case gap down, our max dollar risk is capped to the exact penny.
 
-Here is the simple, real-world logic behind the exit plan:
+If this setup breaks, we shake it off, take the small scratch, and wait for the next pristine setup. Are you comfortable with the invalidation level here?`;
 
-* **Target 1 ($${primaryRec ? primaryRec.takeProfit1.toFixed(2) : 'First Level'}):** Locks in a 1:2 reward-to-risk ratio. Once price hits here, you take partial profits and slide your stop to breakeven. That turns it into a *risk-free trade* for your peace of mind!
-* **Target 2 ($${primaryRec ? primaryRec.takeProfit2.toFixed(2) : 'Key Wall'}):** This sits right in front of the overhead supply ceiling. You want to sell *before* the sellers step in to defend their roof.
-* **Target 3 ($${primaryRec ? primaryRec.takeProfit3.toFixed(2) : 'Runner'}):** A small "runner" position left open to ride big momentum if a breakout catches fire.`;
-      } else {
-        fallbackText = `### 🎙️ The Daily Market Story & Recommendation Breakdown for ${symbol}
+    } else if (
+      lastUserQuery.includes('target') || lastUserQuery.includes('exit') || lastUserQuery.includes('take profit') || lastUserQuery.includes('50%') || lastUserQuery.includes('profit')
+    ) {
+      // Discussing Profit Targets & The 50% Rule
+      fallbackText = `Let's talk through our exit game plan, because getting in is only half the battle. Exiting with discipline is where steady cashflow is built.
 
-**Where We Are Right Now:**
-${symbol} is trading around **$${price.toLocaleString()}** with an average bar swing of **$${atr}**. The market has been working through intraday chop, but key institutional footprints are clearly visible.
+Here is why our targets are set the way they are:
 
----
+${primaryRec ? `* **Target 1 ($${primaryRec.takeProfit1.toFixed(2)}):** This delivers a solid 1:2 risk-to-reward. When price tags this level, our rule is to lock in **50% of the position** and immediately trail our stop to breakeven ($${primaryRec.entry.toFixed(2)}). That instantly transforms the trade into a **risk-free runner**!
+* **Target 2 ($${primaryRec.takeProfit2.toFixed(2)}):** This sits right in front of the next institutional supply wall. We don't get greedy—we sell into strength *before* the opposing sellers can push back.
+* **Target 3 ($${primaryRec.takeProfit3.toFixed(2)}):** This is a small runner kept alive just in case momentum ignites into a breakout.` : `* **Target 1:** Captures 1:2 R:R and allows us to slide stops to breakeven.
+* **Target 2:** Sits right before overhead resistance.`}
 
-### 1. 📖 The Market Story (Background):
-* **Who's in Control?** Price recently pulled into a high-interest area. Earlier, big buyers stepped up aggressively, creating an order floor down below. 
-* **The Trampoline Effect:** Because price hasn't worn out this level yet, buyers are expected to defend it like a trampoline.
+**The Golden 50% Rule for Options Spreads:**
+If you're trading credit spreads, when the spread decays by 50% of maximum profit, **we buy to close and bank the money**. Chasing that last 10% or 20% over days of expiration risk isn't worth the gamma whip. Bank it, high-five, and recycle your buying power! How does that align with your profit goals?`;
 
----
+    } else if (
+      lastUserQuery.includes('conviction') || lastUserQuery.includes('quality') || lastUserQuery.includes('score') || lastUserQuery.includes('should i') || lastUserQuery.includes('take this')
+    ) {
+      // Discussing Quality Scoring & Conviction Rationale
+      const isFresh = Boolean(freshDemand?.testedCount === 0 || freshSupply?.testedCount === 0);
+      const freshnessText = isFresh
+        ? "⭐ **High (+30 pts)** — Fresh, untested zone with resting institutional limit orders intact."
+        : "⚡ **Moderate (+15 pts)** — Zone has been tapped previously; fewer unfilled orders remain.";
+      const rrText = primaryRec ? `1:${primaryRec.riskRewardRatio.toFixed(1)}` : "Favorable";
 
-### 2. 🎯 The "Why" Behind the Recommended Setup:
-${primaryRec ? `
-* **Why Enter at $${primaryRec.entry.toFixed(2)}?** We don't chase the market when it's floating midway. Waiting for $${primaryRec.entry.toFixed(2)} is like buying at wholesale instead of paying retail markup.
-* **Why Stop at $${primaryRec.stopLoss.toFixed(2)}?** We gave it an extra **${multiplier}x ATR cushion**. This keeps you safe from normal wiggles and fakeouts.
-* **Why These Targets?** Target 1 ($${primaryRec.takeProfit1.toFixed(2)}) takes your risk off the table; Target 2 ($${primaryRec.takeProfit2.toFixed(2)}) sits right before the overhead ceiling.` : `
-* Waiting for price to test a pristine wholesale zone before committing capital.`}
+      fallbackText = `Let's break down the conviction and quality of this setup on ${symbol} right now.
 
----
+Here is how our heuristic model scores this opportunity:
+* **Zone Freshness:** ${freshnessText}
+* **Departure Speed:** Notice the strong impulse candle that left this base originally. Fast departures indicate heavy institutional volume imbalance (+25 pts).
+* **Volatility Regime:** ATR is currently **$${atr}**, meaning market participants are active without entering an erratic panic regime.
+* **Defined Risk Ratio:** ${primaryRec ? `This setup offers a clean **${rrText}** risk-to-reward ratio.` : 'Favorable risk-to-reward profile.'}
 
-### 3. ☕ Today's Plain English Game Plan:
-* **Patience:** Let price come to your entry. Do not chase green candles into overhead resistance.
-* **Set and Forget:** Use an OCO bracket order so your stops and targets execute automatically.`;
-      }
+**Partner Verdict:** This is a solid, high-probability setup **provided we stick to our discipline and wait for our limit entry**. If price runs away without tagging our number, we let it go. Never chase a trade out of FOMO. What's your gut telling you on this one?`;
+
+    } else if (
+      lastUserQuery.includes('option') || lastUserQuery.includes('spread') || lastUserQuery.includes('cashflow') || lastUserQuery.includes('theta') || lastUserQuery.includes('delta') || lastUserQuery.includes('futures') || lastUserQuery.includes('/mes')
+    ) {
+      // Discussing Options & Cashflow Decision Making
+      fallbackText = `Let's discuss the instrument decision: **How do we turn this chart into steady cashflow without blowing up our account?**
+
+Here is why we lean heavily into **defined-risk credit spreads or options assists**:
+
+1. **Theta Decay is Daily Rent:** When we sell an out-of-the-money credit spread underneath our demand floor (or above supply), time is working for us 24/7. Even if ${symbol} goes sideways or chops around, the option loses value every hour, putting green in our pocket.
+2. **High Probability of Profit (POP):** Selling around 0.20 to 0.30 Delta gives us roughly **75% to 85% statistical odds** of expiring out-of-the-money.
+3. **No Blow-Up Risk:** By buying a protective outer wing, our max risk is strictly capped to the penny. We never trade naked options.
+4. **Outrights vs Spreads:** If you prefer outright futures (like /MES), you get 1:1 delta and tick-for-tick precision, but you have to manage margin and price swings actively. Spreads give you a cushion to be slightly wrong on timing and still get paid.
+
+Which vehicle fits your account and comfort level best for this session?`;
+
     } else {
-      fallbackText = `### Live Order Flow Briefing for ${symbol}
-Spot is currently at **$${price.toLocaleString()}** with an ATR(14) of **$${atr}**.
+      // General thoughtful trading partner conversation
+      fallbackText = `Hey partner! Let's talk through the decision-making on ${symbol} together.
 
-* **Market Structure:** Price is oscillating within algorithmic liquidity bands.
-* **Stop-Loss Protection:** The system is applying a **${multiplier}x ATR buffer** beyond structural zone extremes to invalidate false breakouts.
-* **Execution Bias:** Wait for high-volume retest wicks before committing capital.`;
+Price is currently sitting at **$${price.toLocaleString()}**, swinging about **$${atr}** per bar.
 
-      if (lastUserQuery.includes('buffer') || lastUserQuery.includes('stop')) {
-        fallbackText = `### Stop-Loss Volatility Buffer Analysis
-In high-volatility regimes, institutional market makers routinely run stops right past obvious swing points.
+Here is how I am reading the desk right now:
+* **The Tug of War:** We have clear institutional footprints on this chart. ${freshDemand ? `Buyers established a solid order floor down around **$${freshDemand.low.toFixed(2)} – $${freshDemand.high.toFixed(2)}**.` : 'Support is holding the lower range.'} ${freshSupply ? `Meanwhile, sellers have an overhead ceiling parked near **$${freshSupply.low.toFixed(2)} – $${freshSupply.high.toFixed(2)}**.` : 'Overhead resistance is capping momentum.'}
+* **The Core Decision Rule:** We don't make impulsive bets in the middle of the range. We wait for price to either retrace to wholesale demand or push into wholesale supply where our risk is tiny and our edge is huge.
+${primaryRec ? `* **The Active Game Plan:** We are monitoring a **${primaryRec.side.toUpperCase()}** setup targeting an entry at **$${primaryRec.entry.toFixed(2)}** with a stop at **$${primaryRec.stopLoss.toFixed(2)}**.` : ''}
 
-1. **Calculated Buffer:** With ATR at **$${atr}** and a **${multiplier}x multiplier**, the safety cushion is **$${(parseFloat(atr) * parseFloat(multiplier)).toFixed(2)}**.
-2. **Mechanism:** Rather than placing your stop right at the zone border, we extend it by this buffer.
-3. **Result:** Historical backtests show this eliminates over 42% of premature stop-outs during temporary liquidity sweeps.`;
-      } else if (lastUserQuery.includes('demand') || lastUserQuery.includes('supply') || lastUserQuery.includes('zone')) {
-        fallbackText = `### Current Zone Efficacy for ${symbol}
-* **Demand Zones:** Monitored below spot. Institutional accumulation occurred with explosive ERC candles.
-* **Supply Zones:** Stacked overhead, defending structural resistance.
-* **Mitigation Rule:** Zones that have already been tapped once or twice lose institutional unfilled order density; fresh untested zones provide significantly higher win rates.`;
-      }
+What aspect of this setup would you like to unpack—the entry timing, why the stop buffer is set where it is, or how we should structure the options contracts?`;
     }
 
     // Stream text in realistic word-chunks
@@ -376,7 +404,7 @@ In high-volatility regimes, institutional market makers routinely run stops righ
     for (let i = 0; i < words.length; i += 3) {
       const chunkText = words.slice(i, i + 3).join(' ') + ' ';
       res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
-      await new Promise((r) => setTimeout(r, 40));
+      await new Promise((r) => setTimeout(r, 35));
     }
 
     res.write('data: [DONE]\n\n');
