@@ -233,9 +233,24 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
   };
 
   const computeOptionMetrics = (
-    optionPlay: SchwabOptionContractRecommendation,
+    optionPlay: SchwabOptionContractRecommendation | null,
     params: CustomTradeParams
   ) => {
+    if (!optionPlay) {
+      return {
+        entryPrem: 0,
+        stopPrem: 0,
+        targetPrem: 0,
+        riskPerContract: 0,
+        rewardPerContract: 0,
+        optionRR: 0,
+        contracts: 1,
+        totalOptionRisk: 0,
+        totalOptionReward: 0,
+        totalOptionCost: 0,
+        multiplier: 100,
+      };
+    }
     const entryPrem = optionPlay.entry.premium;
     const stopPrem = optionPlay.stopLoss.premium;
 
@@ -342,7 +357,7 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
         const effectiveRec = getEffectiveRec(rec);
         const isDormant = rec.proximityPhase?.includes('Dormant') || (rec.distanceInAtr !== undefined && rec.distanceInAtr > 1.5);
 
-        const optionPlay: SchwabOptionContractRecommendation = generateSchwabOptionPlay(
+        const optionPlay: SchwabOptionContractRecommendation | null = generateSchwabOptionPlay(
           effectiveRec,
           ticker,
           volatilityMetrics
@@ -357,26 +372,30 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
         const dynamicContractQty = optionMetrics.contracts;
 
         // 1-leg single entry TOS option command
-        const dynamicNaturalTosCommand = formatTosNaturalOptionCommand(
-          optionPlay.ticker,
-          optionPlay.tosExpirationStr,
-          optionPlay.strike,
-          optionPlay.optionType,
-          optionMetrics.entryPrem,
-          dynamicContractQty
-        );
+        const dynamicNaturalTosCommand = optionPlay
+          ? formatTosNaturalOptionCommand(
+              optionPlay.ticker,
+              optionPlay.tosExpirationStr,
+              optionPlay.strike,
+              optionPlay.optionType,
+              optionMetrics.entryPrem,
+              dynamicContractQty
+            )
+          : '';
 
         // Full 3-leg compound 1st Triggers OCO bracket TOS option command (Entry / SL / TP)
-        const dynamicCompoundTosOptionCommand = formatTosCompoundOptionBracketCommand(
-          optionPlay.ticker,
-          optionPlay.tosExpirationStr,
-          optionPlay.strike,
-          optionPlay.optionType,
-          optionMetrics.entryPrem,
-          optionMetrics.stopPrem,
-          optionMetrics.targetPrem,
-          dynamicContractQty
-        );
+        const dynamicCompoundTosOptionCommand = optionPlay
+          ? formatTosCompoundOptionBracketCommand(
+              optionPlay.ticker,
+              optionPlay.tosExpirationStr,
+              optionPlay.strike,
+              optionPlay.optionType,
+              optionMetrics.entryPrem,
+              optionMetrics.stopPrem,
+              optionMetrics.targetPrem,
+              dynamicContractQty
+            )
+          : '';
 
         // 1-leg single entry Stock/Futures command
         const dynamicStockTosCommand = formatTosStockOrFuturesCommand(
@@ -427,7 +446,7 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                 >
                   {isLong ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
                   {activeMode === 'options' 
-                    ? `BUY ${optionPlay.optionType}`
+                    ? `BUY ${optionPlay ? optionPlay.optionType : (isLong ? 'CALL' : 'PUT')}`
                     : (isLong ? 'BUY LIMIT' : 'SELL LIMIT')} · {rec.pattern}
                 </span>
                 <span className="text-[11px] text-slate-400">
@@ -705,8 +724,19 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
             )}
 
             {activeMode === 'options' ? (
-              /* SCHWAB OPTIONS ASSIST VIEW */
-              <div className="space-y-2.5">
+              !optionPlay ? (
+                <div className="p-4 rounded-lg bg-amber-950/40 border border-amber-600/70 text-center space-y-1.5 font-mono">
+                  <div className="text-amber-300 font-bold text-xs flex items-center justify-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-400" />
+                    <span>⚠️ Option Calculation Refused (Coordinate Space Mismatch)</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 font-sans">
+                    Price coordinates for <strong>{cleanSym}</strong> did not match the expected underlying domain. Please refresh live market data or switch to Outright / Shares view.
+                  </p>
+                </div>
+              ) : (
+                /* SCHWAB OPTIONS ASSIST VIEW */
+                <div className="space-y-2.5">
                 {/* Model Estimate Transparency Warning Banner */}
                 <div className="p-2.5 rounded-lg bg-amber-950/40 border border-amber-600/70 flex items-start gap-2.5 text-xs text-amber-200">
                   <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
@@ -952,7 +982,7 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                   </div>
                 </div>
               </div>
-            ) : (
+            )) : (
               /* STOCK SHARES VIEW (S.E.T. PROTOCOL) */
               <div className="space-y-2.5">
                 {/* S.E.T. Entry & Stops Grid */}

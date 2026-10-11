@@ -230,16 +230,20 @@ export const OpportunityMonitor: React.FC<OpportunityMonitorProps> = ({
 
     if (closestRec) {
       const optionPlay = generateSchwabOptionPlay(closestRec, cleanSym, volMetrics);
-      optionStrike = optionPlay.strike;
-      optionExp = optionPlay.expirationDisplay;
-      optionTosExp = optionPlay.tosExpirationStr;
-      optionDotSymbol = optionPlay.tosDotSymbol;
-      optionPremium = optionPlay.entry.premium;
+      if (optionPlay) {
+        optionStrike = optionPlay.strike;
+        optionExp = optionPlay.expirationDisplay;
+        optionTosExp = optionPlay.tosExpirationStr;
+        optionDotSymbol = optionPlay.tosDotSymbol;
+        optionPremium = optionPlay.entry.premium;
 
-      if (cleanSym.startsWith('/')) {
+        if (cleanSym.startsWith('/')) {
+          triggerAction = closestRec.side === 'long' ? 'BUY FUTURE /MES' : 'SELL SHORT /MES';
+        } else {
+          triggerAction = closestRec.side === 'long' ? `BUY ${optionPlay.strike} CALL` : `BUY ${optionPlay.strike} PUT`;
+        }
+      } else if (cleanSym.startsWith('/')) {
         triggerAction = closestRec.side === 'long' ? 'BUY FUTURE /MES' : 'SELL SHORT /MES';
-      } else {
-        triggerAction = closestRec.side === 'long' ? `BUY ${optionPlay.strike} CALL` : `BUY ${optionPlay.strike} PUT`;
       }
     }
 

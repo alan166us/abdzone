@@ -72,11 +72,33 @@ export const ThinkorswimPostModal: React.FC<ThinkorswimPostModalProps> = ({
   const [orderMode, setOrderMode] = useState<'options' | 'shares'>(isFutures ? 'shares' : 'options');
   const [orderQty, setOrderQty] = useState<number>(isFutures ? 1 : (orderMode === 'shares' ? 100 : 2));
 
-  const optionPlay: SchwabOptionContractRecommendation = generateSchwabOptionPlay(
+  const optionPlay: SchwabOptionContractRecommendation | null = generateSchwabOptionPlay(
     recommendation,
     symbol,
     volatilityMetrics
   );
+
+  if (!optionPlay) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs">
+        <div className="bg-[#0f172a] border border-amber-500/50 rounded-xl p-6 max-w-md w-full text-center">
+          <div className="w-12 h-12 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mx-auto mb-3">
+            <span className="text-xl">⚠️</span>
+          </div>
+          <h3 className="text-base font-bold text-amber-400 mb-2">Invalid Price Coordinates</h3>
+          <p className="text-xs text-slate-400 mb-4">
+            Cannot construct option order: coordinate space mismatch detected for {cleanSym}. Please refresh live market data.
+          </p>
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold rounded-lg transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const isLong = recommendation.side === 'long';
   const effectiveQty = Math.max(1, orderQty);

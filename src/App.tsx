@@ -443,6 +443,11 @@ export default function App() {
 
   const handleLogRecommendationToJournal = useCallback((rec: TradeRecommendation) => {
     const optionPlay = generateSchwabOptionPlay(rec, selectedAsset, volatilityMetrics);
+    if (!optionPlay) {
+      setNotification(`⚠️ Refused option log: price coordinates for ${selectedAsset} are invalid. Please refresh live data.`);
+      setTimeout(() => setNotification(null), 4000);
+      return;
+    }
     const newTrade: JournalTrade = {
       id: `jt-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       timestamp: Date.now(),

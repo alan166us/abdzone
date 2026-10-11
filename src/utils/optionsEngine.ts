@@ -255,7 +255,7 @@ export function generateSchwabOptionPlay(
     expirationStyle?: ExpirationStyle;
     strikeBias?: StrikeBias;
   }
-): SchwabOptionContractRecommendation {
+): SchwabOptionContractRecommendation | null {
   const expirationStyle = options?.expirationStyle || 'swing';
   const strikeBias = options?.strikeBias || 'ITM';
 
@@ -264,31 +264,30 @@ export function generateSchwabOptionPlay(
   const cleanTicker = rawTicker.replace(/^(SCHWAB:|EXCHANGE:)/, '').trim().toUpperCase();
   const underlying = rec.entry;
 
-  // Enforce index futures coordinate space and guard against leaked SPY price coordinates (< 2000)
-  const isIndexFutures = cleanTicker.includes('MES') || cleanTicker.includes('ES');
-  let spotPrice = underlying;
-  if (isIndexFutures && spotPrice < 2000) {
-    spotPrice = 7865.0; // fallback safety guard if spot was polluted by SPY
-  } else if ((cleanTicker.includes('NQ') || cleanTicker.includes('MNQ')) && spotPrice < 5000) {
-    spotPrice = 24850.0;
+  const isIndexFutures =
+    cleanTicker.includes('MES') || cleanTicker.includes('ES');
+  const isNqFamily =
+    cleanTicker.includes('NQ') || cleanTicker.includes('MNQ');
+
+  const isPolluted =
+    (isIndexFutures && (rec.entry < 2000 || underlying < 2000)) ||
+    (isNqFamily && (rec.entry < 5000 || underlying < 5000));
+
+  // Never invent prices — refuse to build a ticket
+  if (isPolluted) {
+    console.warn(
+      `[optionsEngine] Refusing option play: polluted coordinates for ${cleanTicker}`,
+      { entry: rec.entry, underlying }
+    );
+    return null;
   }
 
-  // Guard against leaked equity coordinates on index futures triggers
-  const isPolluted = (isIndexFutures && (rec.entry < 2000 || underlying < 2000)) ||
-    ((cleanTicker.includes('NQ') || cleanTicker.includes('MNQ')) && (rec.entry < 5000 || underlying < 5000));
-  const triggerEntry = isPolluted ? spotPrice : rec.entry;
-  const triggerStopLoss = isPolluted
-    ? (isCall ? spotPrice - 35.0 : spotPrice + 35.0)
-    : rec.stopLoss;
-  const triggerTp1 = isPolluted
-    ? (isCall ? spotPrice + 70.0 : spotPrice - 70.0)
-    : rec.takeProfit1;
-  const triggerTp2 = isPolluted
-    ? (isCall ? spotPrice + 120.0 : spotPrice - 120.0)
-    : rec.takeProfit2;
-  const triggerTp3 = isPolluted
-    ? (isCall ? spotPrice + 180.0 : spotPrice - 180.0)
-    : rec.takeProfit3;
+  const spotPrice = underlying;
+  const triggerEntry = rec.entry;
+  const triggerStopLoss = rec.stopLoss;
+  const triggerTp1 = rec.takeProfit1;
+  const triggerTp2 = rec.takeProfit2;
+  const triggerTp3 = rec.takeProfit3;
 
   const increment = getStrikeIncrement(spotPrice, cleanTicker);
 
@@ -502,14 +501,22 @@ export function generateSchwabOptionPlay(
     1
   );
 
+  const estimateBanner = [
+    '⚠️ MODEL ESTIMATE — NOT LIVE MARKET DATA',
+    'Premiums & Greeks are theoretical (HV approximation).',
+    'Verify live bid/ask on thinkorswim / Schwab before routing.',
+    '-----------------------------------------',
+  ].join('\n');
+
   // Clean Schwab Portal Summary Slip for copy/paste into Schwab.com
   const schwabWebSummary = isFutures
     ? [
+        estimateBanner,
         `=== CHARLES SCHWAB / THINKORSWIM FUTURES OPTIONS TICKET ===`,
         `CONTRACT:      ${actualTicker} ${expDisplay} $${strike} ${optionTypeStr}`,
         `ACTION:        Buy to Open`,
         `ORDER TYPE:    Limit with OCO Bracket`,
-        `MULTIPLIER:    $${pointMultiplier.toFixed(2)}/point ($1.25/tick)`,
+        `MULTIPLIER:    $${pointMultiplier.toFixed(2)}/point`,
         `-----------------------------------------`,
         `1. ENTRY LIMIT:       $${entryPremium.toFixed(2)} ($${costPerContract}/contract) [Futures Trigger: $${triggerEntry.toFixed(2)}]`,
         `2. STOP-LOSS (SL):    $${stopPremium.toFixed(2)} (-$${Math.abs(stopLoss.lossPerContract)}/contract, ${stopLoss.percentLoss}%) [Futures Trigger: $${triggerStopLoss.toFixed(2)}]`,
@@ -519,6 +526,7 @@ export function generateSchwabOptionPlay(
         `CME/OCC SYMBOL: ${occSymbol}`,
       ].join('\n')
     : [
+        estimateBanner,
         `=== CHARLES SCHWAB OPTION TRADE ORDER ===`,
         `TICKER:        ${cleanTicker}`,
         `STRATEGY:      Buy Single Option (${strikeBias})`,

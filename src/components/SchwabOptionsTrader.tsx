@@ -104,12 +104,19 @@ export const SchwabOptionsTrader: React.FC<SchwabOptionsTraderProps> = ({
   };
 
   if (!activeRec || !optionPlay) {
+    const isCoordinatePollution = !!activeRec && !optionPlay;
     return (
       <div className="h-full flex flex-col items-center justify-center p-8 text-center bg-[#0B0F17] rounded-lg border border-slate-800">
         <Building2 className="w-12 h-12 text-slate-600 mb-3" />
-        <h3 className="text-sm font-semibold text-slate-300">No Active Zone Recommendations for {symbol}</h3>
+        <h3 className="text-sm font-semibold text-slate-300">
+          {isCoordinatePollution
+            ? `Invalid Underlying Coordinates for ${symbol}`
+            : `No Active Zone Recommendations for ${symbol}`}
+        </h3>
         <p className="text-xs text-slate-500 max-w-md mt-1 mb-4">
-          Price is traversing between supply and demand zones without a confirmed high-probability touchpoint.
+          {isCoordinatePollution
+            ? 'Coordinate space mismatch detected between underlying and futures/stock indices. Please refresh live market data.'
+            : 'Price is traversing between supply and demand zones without a confirmed high-probability touchpoint.'}
         </p>
       </div>
     );
