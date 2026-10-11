@@ -274,7 +274,8 @@ export function generateSchwabOptionPlay(
   }
 
   // Guard against leaked equity coordinates on index futures triggers
-  const isPolluted = isIndexFutures && (rec.entry < 2000 || underlying < 2000);
+  const isPolluted = (isIndexFutures && (rec.entry < 2000 || underlying < 2000)) ||
+    ((cleanTicker.includes('NQ') || cleanTicker.includes('MNQ')) && (rec.entry < 5000 || underlying < 5000));
   const triggerEntry = isPolluted ? spotPrice : rec.entry;
   const triggerStopLoss = isPolluted
     ? (isCall ? spotPrice - 35.0 : spotPrice + 35.0)
