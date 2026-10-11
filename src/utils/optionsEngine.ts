@@ -263,7 +263,33 @@ export function generateSchwabOptionPlay(
   const rawTicker = ticker || rec.symbol || 'SPY';
   const cleanTicker = rawTicker.replace(/^(SCHWAB:|EXCHANGE:)/, '').trim().toUpperCase();
   const underlying = rec.entry;
-  const increment = getStrikeIncrement(underlying, cleanTicker);
+
+  // Enforce index futures coordinate space and guard against leaked SPY price coordinates (< 2000)
+  const isIndexFutures = cleanTicker.includes('MES') || cleanTicker.includes('ES');
+  let spotPrice = underlying;
+  if (isIndexFutures && spotPrice < 2000) {
+    spotPrice = 7865.0; // fallback safety guard if spot was polluted by SPY
+  } else if ((cleanTicker.includes('NQ') || cleanTicker.includes('MNQ')) && spotPrice < 5000) {
+    spotPrice = 24850.0;
+  }
+
+  // Guard against leaked equity coordinates on index futures triggers
+  const isPolluted = isIndexFutures && (rec.entry < 2000 || underlying < 2000);
+  const triggerEntry = isPolluted ? spotPrice : rec.entry;
+  const triggerStopLoss = isPolluted
+    ? (isCall ? spotPrice - 35.0 : spotPrice + 35.0)
+    : rec.stopLoss;
+  const triggerTp1 = isPolluted
+    ? (isCall ? spotPrice + 70.0 : spotPrice - 70.0)
+    : rec.takeProfit1;
+  const triggerTp2 = isPolluted
+    ? (isCall ? spotPrice + 120.0 : spotPrice - 120.0)
+    : rec.takeProfit2;
+  const triggerTp3 = isPolluted
+    ? (isCall ? spotPrice + 180.0 : spotPrice - 180.0)
+    : rec.takeProfit3;
+
+  const increment = getStrikeIncrement(spotPrice, cleanTicker);
 
   // Expiration calculation
   const expDetails = getExpirationDetails(expirationStyle);
@@ -275,13 +301,13 @@ export function generateSchwabOptionPlay(
   const pointMultiplier = getContractPointValue(actualTicker, true);
 
   // Strike Selection based on bias (ITM / ATM / OTM)
-  const atmStrike = Math.round(underlying / increment) * increment;
+  const atmStrike = isIndexFutures ? Math.round(spotPrice / 5) * 5 : Math.round(spotPrice / increment) * increment;
   let strike = atmStrike;
 
   if (isCall) {
     if (strikeBias === 'ITM') {
-      strike = Math.floor(underlying / increment) * increment;
-      if (strike === atmStrike && underlying > increment) {
+      strike = Math.floor(spotPrice / increment) * increment;
+      if (strike === atmStrike && spotPrice > increment) {
         strike = atmStrike - increment;
       }
     } else if (strikeBias === 'OTM') {
@@ -292,7 +318,7 @@ export function generateSchwabOptionPlay(
   } else {
     // PUT
     if (strikeBias === 'ITM') {
-      strike = Math.ceil(underlying / increment) * increment;
+      strike = Math.ceil(spotPrice / increment) * increment;
       if (strike === atmStrike) {
         strike = atmStrike + increment;
       }
@@ -306,19 +332,19 @@ export function generateSchwabOptionPlay(
   // Snap strike to listed exchange increments before constructing order strings
   if (isFutures) {
     if (actualTicker.includes('MES') || actualTicker.includes('ES')) {
-      strike = Math.round(underlying / 5) * 5;
+      strike = Math.round(spotPrice / 5) * 5;
       if (strikeBias === 'ITM') strike = isCall ? strike - 5 : strike + 5;
       else if (strikeBias === 'OTM') strike = isCall ? strike + 5 : strike - 5;
     } else if (actualTicker.includes('MNQ') || actualTicker.includes('NQ')) {
-      strike = Math.round(underlying / 25) * 25;
+      strike = Math.round(spotPrice / 25) * 25;
       if (strikeBias === 'ITM') strike = isCall ? strike - 25 : strike + 25;
       else if (strikeBias === 'OTM') strike = isCall ? strike + 25 : strike - 25;
     } else if (actualTicker.includes('RTY')) {
-      strike = Math.round(underlying / 10) * 10;
+      strike = Math.round(spotPrice / 10) * 10;
       if (strikeBias === 'ITM') strike = isCall ? strike - 10 : strike + 10;
       else if (strikeBias === 'OTM') strike = isCall ? strike + 10 : strike - 10;
     } else {
-      strike = Math.round(underlying);
+      strike = Math.round(spotPrice);
     }
   } else {
     strike = Number((Math.round(strike / increment) * increment).toFixed(2));
@@ -340,19 +366,19 @@ export function generateSchwabOptionPlay(
   }
 
   // Baseline option price calculation using volatility and time
-  const moneynessDistance = isCall ? (underlying - strike) : (strike - underlying);
+  const moneynessDistance = isCall ? (spotPrice - strike) : (strike - spotPrice);
   const intrinsicValue = Math.max(0, moneynessDistance);
-  const timeValue = Math.max(0.60, underlying * hv * dteFactor * 0.40);
+  const timeValue = Math.max(0.60, spotPrice * hv * dteFactor * 0.40);
   
   // Calculate Entry Premium
   const rawEntry = intrinsicValue + timeValue;
-  const entryPremium = Number(Math.max(0.85, Math.min(rawEntry, underlying * 0.12)).toFixed(2));
+  const entryPremium = Number(Math.max(0.85, Math.min(rawEntry, spotPrice * 0.12)).toFixed(2));
   
   const costPerContract = Math.round(entryPremium * pointMultiplier);
 
   // Projected stock moves from zone geometry
-  const underlyingTargetMove = Math.abs(rec.takeProfit2 - rec.entry);
-  const underlyingStopMove = Math.abs(rec.entry - rec.stopLoss);
+  const underlyingTargetMove = Math.abs(triggerTp2 - triggerEntry);
+  const underlyingStopMove = Math.abs(triggerEntry - triggerStopLoss);
 
   // Option price movement based on delta + gamma acceleration
   const gammaMultiplier = 1.12;
@@ -364,9 +390,9 @@ export function generateSchwabOptionPlay(
     premium: entryPremium,
     costPerContract,
     orderType: 'LIMIT' as const,
-    underlyingTrigger: rec.entry,
+    underlyingTrigger: triggerEntry,
     action: 'Buy to Open' as const,
-    description: `Limit buy order placed at $${entryPremium.toFixed(2)} when ${actualTicker} enters the zone at $${rec.entry.toFixed(2)}.`,
+    description: `Limit buy order placed at $${entryPremium.toFixed(2)} when ${actualTicker} enters the zone at $${triggerEntry.toFixed(2)}.`,
   };
 
   // 2. STOP-LOSS
@@ -381,9 +407,9 @@ export function generateSchwabOptionPlay(
     lossPerContract: -Math.round(stopLossPerContract),
     percentLoss: -Math.min(99, stopPercentLoss),
     orderType: 'STOP' as const,
-    underlyingTrigger: rec.stopLoss,
+    underlyingTrigger: triggerStopLoss,
     action: 'Sell to Close' as const,
-    description: `Exit contract immediately if option falls to $${stopPremium.toFixed(2)} or ${actualTicker} violates buffered stop at $${rec.stopLoss.toFixed(2)}.`,
+    description: `Exit contract immediately if option falls to $${stopPremium.toFixed(2)} or ${actualTicker} violates buffered stop at $${triggerStopLoss.toFixed(2)}.`,
   };
 
   // 3. TARGET (TP)
@@ -393,12 +419,12 @@ export function generateSchwabOptionPlay(
   const targetPercentGain = Math.round(((targetPremium - entryPremium) / entryPremium) * 100);
 
   // Multi-targets
-  const tp1StockMove = Math.abs(rec.takeProfit1 - rec.entry);
+  const tp1StockMove = Math.abs(triggerTp1 - triggerEntry);
   const tp1Premium = Number(Math.max(entryPremium * 1.25, entryPremium + tp1StockMove * Math.abs(approxDelta)).toFixed(2));
   const tp1Profit = Math.round((tp1Premium - entryPremium) * pointMultiplier);
   const tp1Percent = Math.round(((tp1Premium - entryPremium) / entryPremium) * 100);
 
-  const tp3StockMove = Math.abs(rec.takeProfit3 - rec.entry);
+  const tp3StockMove = Math.abs(triggerTp3 - triggerEntry);
   const tp3Premium = Number(Math.max(targetPremium * 1.35, entryPremium + tp3StockMove * Math.abs(approxDelta) * 1.25).toFixed(2));
   const tp3Profit = Math.round((tp3Premium - entryPremium) * pointMultiplier);
   const tp3Percent = Math.round(((tp3Premium - entryPremium) / entryPremium) * 100);
@@ -409,7 +435,7 @@ export function generateSchwabOptionPlay(
     premium: targetPremium,
     profitPerContract,
     percentGain: targetPercentGain,
-    underlyingTrigger: rec.takeProfit2,
+    underlyingTrigger: triggerTp2,
     action: 'Sell to Close' as const,
     orderType: 'LIMIT' as const,
     riskRewardRatio: optionRR,
@@ -417,21 +443,21 @@ export function generateSchwabOptionPlay(
       premium: tp1Premium,
       profitPerContract: tp1Profit,
       percentGain: tp1Percent,
-      underlyingTrigger: rec.takeProfit1,
+      underlyingTrigger: triggerTp1,
       label: 'TP1 (Conservative 1:2 R:R)',
     },
     tp2: {
       premium: targetPremium,
       profitPerContract,
       percentGain: targetPercentGain,
-      underlyingTrigger: rec.takeProfit2,
+      underlyingTrigger: triggerTp2,
       label: 'TP2 (Major Opposing Zone)',
     },
     tp3: {
       premium: tp3Premium,
       profitPerContract: tp3Profit,
       percentGain: tp3Percent,
-      underlyingTrigger: rec.takeProfit3,
+      underlyingTrigger: triggerTp3,
       label: 'TP3 (Trend Runner)',
     },
   };
@@ -484,9 +510,9 @@ export function generateSchwabOptionPlay(
         `ORDER TYPE:    Limit with OCO Bracket`,
         `MULTIPLIER:    $${pointMultiplier.toFixed(2)}/point ($1.25/tick)`,
         `-----------------------------------------`,
-        `1. ENTRY LIMIT:       $${entryPremium.toFixed(2)} ($${costPerContract}/contract) [Futures Trigger: $${rec.entry.toFixed(2)}]`,
-        `2. STOP-LOSS (SL):    $${stopPremium.toFixed(2)} (-$${Math.abs(stopLoss.lossPerContract)}/contract, ${stopLoss.percentLoss}%) [Futures Trigger: $${rec.stopLoss.toFixed(2)}]`,
-        `3. TARGET (TP):       $${targetPremium.toFixed(2)} (+$${profitPerContract}/contract, +${targetPercentGain}%) [Futures Target: $${rec.takeProfit2.toFixed(2)}]`,
+        `1. ENTRY LIMIT:       $${entryPremium.toFixed(2)} ($${costPerContract}/contract) [Futures Trigger: $${triggerEntry.toFixed(2)}]`,
+        `2. STOP-LOSS (SL):    $${stopPremium.toFixed(2)} (-$${Math.abs(stopLoss.lossPerContract)}/contract, ${stopLoss.percentLoss}%) [Futures Trigger: $${triggerStopLoss.toFixed(2)}]`,
+        `3. TARGET (TP):       $${targetPremium.toFixed(2)} (+$${profitPerContract}/contract, +${targetPercentGain}%) [Futures Target: $${triggerTp2.toFixed(2)}]`,
         `-----------------------------------------`,
         `RISK / REWARD: 1 : ${optionRR} | DELTA: ${approxDelta}`,
         `CME/OCC SYMBOL: ${occSymbol}`,
@@ -500,9 +526,9 @@ export function generateSchwabOptionPlay(
         `ORDER TYPE:    Limit with OCO Bracket`,
         `MULTIPLIER:    100 shares/contract`,
         `-----------------------------------------`,
-        `1. ENTRY LIMIT:       $${entryPremium.toFixed(2)} ($${costPerContract}/contract) [Stock Trigger: $${rec.entry.toFixed(2)}]`,
-        `2. STOP-LOSS (SL):    $${stopPremium.toFixed(2)} (-$${Math.abs(stopLoss.lossPerContract)}/contract, ${stopLoss.percentLoss}%) [Stock Trigger: $${rec.stopLoss.toFixed(2)}]`,
-        `3. TARGET (TP):       $${targetPremium.toFixed(2)} (+$${profitPerContract}/contract, +${targetPercentGain}%) [Stock Target: $${rec.takeProfit2.toFixed(2)}]`,
+        `1. ENTRY LIMIT:       $${entryPremium.toFixed(2)} ($${costPerContract}/contract) [Stock Trigger: $${triggerEntry.toFixed(2)}]`,
+        `2. STOP-LOSS (SL):    $${stopPremium.toFixed(2)} (-$${Math.abs(stopLoss.lossPerContract)}/contract, ${stopLoss.percentLoss}%) [Stock Trigger: $${triggerStopLoss.toFixed(2)}]`,
+        `3. TARGET (TP):       $${targetPremium.toFixed(2)} (+$${profitPerContract}/contract, +${targetPercentGain}%) [Stock Target: $${triggerTp2.toFixed(2)}]`,
         `-----------------------------------------`,
         `RISK / REWARD: 1 : ${optionRR} | DELTA: ${approxDelta}`,
         `OCC SYMBOL:    ${occSymbol}`,
@@ -516,7 +542,7 @@ export function generateSchwabOptionPlay(
     optionType: optionTypeStr,
     instrumentType,
     ticker: actualTicker,
-    underlyingPrice: underlying,
+    underlyingPrice: spotPrice,
     strike,
     strikeBias,
     expirationStr: expIso,

@@ -80,7 +80,15 @@ export const SchwabOptionsTrader: React.FC<SchwabOptionsTraderProps> = ({
   const isFutures = cleanSym.startsWith('/') || cleanSym === 'MES' || cleanSym.includes('MES') || cleanSym.includes('MNQ') || cleanSym.includes('ES') || cleanSym.includes('NQ') || cleanSym.includes('RTY') || cleanSym.includes('CL') || cleanSym.includes('GC');
   const actualTicker = isFutures ? (cleanSym.startsWith('/') ? cleanSym : `/${cleanSym}`) : cleanSym;
 
-  const activeRec = selectedRecommendation || recommendations[0];
+  const isIndexFutures = cleanSym.includes('MES') || cleanSym.includes('ES');
+  const isSelectedRecStale = selectedRecommendation && (
+    (selectedRecommendation.symbol && selectedRecommendation.symbol.toUpperCase().replace(/^(SCHWAB:|EXCHANGE:|\/)/, '') !== cleanSym.replace('/', '')) ||
+    (isIndexFutures && selectedRecommendation.entry < 2000)
+  );
+
+  const activeRec = (selectedRecommendation && !isSelectedRecStale)
+    ? selectedRecommendation
+    : (recommendations.find(r => !isIndexFutures || r.entry >= 2000) || recommendations[0]);
 
   const optionPlay: SchwabOptionContractRecommendation | null = activeRec
     ? generateSchwabOptionPlay(activeRec, symbol, volatilityMetrics, {

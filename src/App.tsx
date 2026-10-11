@@ -171,6 +171,8 @@ export default function App() {
           mode: isSchwab ? 'schwab' : (isExchange ? 'exchange' : 'synthetic'),
         });
         if (!isBackgroundPoll) {
+          setSelectedZoneId(null);
+          setSelectedRecommendation(null);
           setNotification(`Loaded ${cleanSym} (${freqLabel} · ${isSchwab ? 'Schwab Real-Time' : isExchange ? 'Real Exchange Feed' : 'Synthesized Backup'})`);
           setTimeout(() => setNotification(null), 3000);
         }
@@ -202,6 +204,8 @@ export default function App() {
       const fallbackCandles = generateSyntheticMarketData(cleanSym, activeFreq <= 5 ? 120 : 360, startPrice, activeFreq);
       setCandles(fallbackCandles);
       setSelectedAsset(cleanSym);
+      setSelectedZoneId(null);
+      setSelectedRecommendation(null);
     }
   }, [frequency]);
 
@@ -246,12 +250,37 @@ export default function App() {
   }, [isSimulating, selectedAsset, frequency, fetchAssetData]);
 
   // Handle Asset Preset Change
-  const handleSelectAsset = (asset: string) => {
+  const handleSelectAsset = useCallback((asset: string) => {
     setIsSimulating(false);
     setSelectedZoneId(null);
     setSelectedRecommendation(null);
-    fetchAssetData(asset, frequency);
-  };
+
+    const cleanSym = asset.replace(/^(SCHWAB:|EXCHANGE:)/, '').trim().toUpperCase();
+    setSelectedAsset(cleanSym);
+
+    // Immediately seed clean initial candles for the target asset so that any derived
+    // calculations (volatilityMetrics, zones, recommendations) are instantly aligned with
+    // the target asset's true price realm, preventing stale SPY coordinates from lingering.
+    let startPrice = 779.09;
+    if (cleanSym.includes('MES') || cleanSym.includes('ES')) startPrice = 7842.75;
+    else if (cleanSym.includes('NQ') || cleanSym.includes('MNQ')) startPrice = 24850;
+    else if (cleanSym.includes('YM') || cleanSym.includes('MYM')) startPrice = 46200;
+    else if (cleanSym.includes('RTY') || cleanSym.includes('M2K')) startPrice = 2480;
+    else if (cleanSym.includes('CL')) startPrice = 74.20;
+    else if (cleanSym.includes('GC')) startPrice = 2950;
+    else if (cleanSym === 'QQQ') startPrice = 605;
+    else if (cleanSym === 'NVDA') startPrice = 184;
+    else if (cleanSym === 'AAPL') startPrice = 258;
+    else if (cleanSym === 'TSLA') startPrice = 380.68;
+    else if (cleanSym === 'PLTR') startPrice = 192.07;
+    else if (cleanSym === 'IREN') startPrice = 41.28;
+    else if (cleanSym === 'SPCX') startPrice = 171.92;
+
+    const freshSeed = generateSyntheticMarketData(cleanSym, frequency <= 5 ? 120 : 360, startPrice, frequency);
+    setCandles(freshSeed);
+
+    fetchAssetData(cleanSym, frequency);
+  }, [frequency, fetchAssetData]);
 
   // 1. Compute Volatility Metrics
   const volatilityMetrics = useMemo(() => {
@@ -294,6 +323,12 @@ export default function App() {
   // 3. Generate Precision Entry & Exit Recommendations
   const currentPrice = candles[candles.length - 1]?.close || 1;
   const recommendations = useMemo(() => {
+    const isIndexFutures = selectedAsset.includes('MES') || selectedAsset.includes('ES');
+    // Ensure recommendations are fully recalculated against fresh candles of the newly selected asset
+    // and prevent stale SPY price coordinates from leaking into index futures
+    if (isIndexFutures && currentPrice < 2000) {
+      return [];
+    }
     return generateTradeRecommendations(
       currentPrice,
       zones,
@@ -302,13 +337,20 @@ export default function App() {
     );
   }, [currentPrice, zones, volatilityMetrics, selectedAsset]);
 
-  // Default select first recommendation if none selected
+  // Default select first recommendation if none selected or if selected recommendation is stale
   useEffect(() => {
-    if (recommendations.length > 0 && !selectedRecommendation) {
-      setSelectedRecommendation(recommendations[0]);
-      setSelectedZoneId(recommendations[0].zoneId);
+    if (recommendations.length > 0) {
+      const isIndexFutures = selectedAsset.includes('MES') || selectedAsset.includes('ES');
+      const isStale = selectedRecommendation && (
+        selectedRecommendation.symbol !== selectedAsset ||
+        (isIndexFutures && selectedRecommendation.entry < 2000)
+      );
+      if (!selectedRecommendation || isStale) {
+        setSelectedRecommendation(recommendations[0]);
+        setSelectedZoneId(recommendations[0].zoneId);
+      }
     }
-  }, [recommendations, selectedRecommendation]);
+  }, [recommendations, selectedRecommendation, selectedAsset]);
 
   // 4. Market Replay Tick Runner
   useEffect(() => {
@@ -434,25 +476,22 @@ export default function App() {
   const [alertCount, setAlertCount] = useState<number>(0);
 
   const handleMonitorSelectAsset = useCallback((symbol: string) => {
-    setSelectedAsset(symbol);
-    fetchAssetData(symbol, frequency);
+    handleSelectAsset(symbol);
     setActiveTab('chart');
-  }, [fetchAssetData, frequency]);
+  }, [handleSelectAsset]);
 
   const handleMonitorOpenOptions = useCallback((symbol: string) => {
-    setSelectedAsset(symbol);
-    fetchAssetData(symbol, frequency);
+    handleSelectAsset(symbol);
     setActiveTab('options');
-  }, [fetchAssetData, frequency]);
+  }, [handleSelectAsset]);
 
   const handleMonitorOpenChart = useCallback((symbol: string, zoneId?: string) => {
-    setSelectedAsset(symbol);
-    fetchAssetData(symbol, frequency);
+    handleSelectAsset(symbol);
     if (zoneId) {
       setSelectedZoneId(zoneId);
     }
     setActiveTab('chart');
-  }, [fetchAssetData, frequency]);
+  }, [handleSelectAsset]);
 
   const handleAlertTriggered = useCallback((alert: OpportunityAlert) => {
     setAlertCount((prev) => prev + 1);
