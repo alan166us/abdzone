@@ -1,4 +1,7 @@
 import { Candle, SupplyDemandZone, TradeRecommendation, VolatilityMetrics, BacktestSummary, BacktestTrade, BacktestConfig, EquityPoint } from '../types/trading';
+import { getContractPointValue } from './contractSpecs';
+
+export { getContractPointValue };
 
 export function generateTradeRecommendations(
   currentPrice: number,
@@ -571,34 +574,6 @@ export function runHistoricalZoneBacktest(
     trades: trades.sort((a, b) => b.entryTime - a.entryTime),
     equityCurve,
   };
-}
-
-/**
- * Unifies contract multiplier & point value logic across the entire platform.
- * Single source of truth for futures contracts, options deliverables, and equities.
- * Explicit dictionary:
- *  - /MES, MES: 5.0 ($1.25/tick)
- *  - /MNQ, MNQ: 2.0 ($0.50/tick)
- *  - /ES, ES: 50.0 ($12.50/tick)
- *  - /NQ, NQ: 20.0 ($5.00/tick)
- *  - /RTY: 50.0 ($5.00/tick)
- *  - /CL: 1000.0 ($10.00/cent)
- *  - /GC: 100.0 ($10.00/0.10)
- *  - Equities/ETFs (SPY, PLTR, etc.): 100.0 (options deliverable)
- */
-export function getContractPointValue(symbol: string): number {
-  if (!symbol) return 100.0;
-  const clean = symbol.trim().toUpperCase().replace('/', '');
-
-  if (clean === 'MES' || clean.startsWith('MES')) return 5.0;
-  if (clean === 'MNQ' || clean.startsWith('MNQ')) return 2.0;
-  if (clean === 'ES' || clean.startsWith('ES')) return 50.0;
-  if (clean === 'NQ' || clean.startsWith('NQ')) return 20.0;
-  if (clean === 'RTY' || clean.startsWith('RTY')) return 50.0;
-  if (clean === 'CL' || clean.startsWith('CL')) return 1000.0;
-  if (clean === 'GC' || clean.startsWith('GC')) return 100.0;
-
-  return 100.0;
 }
 
 export function isFuturesSymbol(symbol: string): boolean {

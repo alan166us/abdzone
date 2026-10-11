@@ -248,7 +248,7 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
     }
 
     const cleanSym = (optionPlay.ticker || ticker || '').toUpperCase();
-    const multiplier = getContractPointValue(cleanSym);
+    const multiplier = getContractPointValue(cleanSym, true);
     const riskPerContract = Math.max(1, (entryPrem - stopPrem) * multiplier);
     const rewardPerContract = Math.max(0, (targetPrem - entryPrem) * multiplier);
     const optionRR = riskPerContract > 0 ? rewardPerContract / riskPerContract : 0;
@@ -806,13 +806,21 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                       )}
                     </button>
 
+                    {/* Non-blocking Model Estimate Verification Guard */}
+                    {copiedId && copiedId.includes(optionPlay.id) && (
+                      <div className="p-1.5 rounded bg-amber-950/90 border border-amber-600/80 text-[10px] text-amber-200 flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        <span><strong>Verification Required:</strong> Theoretical model parameters copied. Verify live chain marks on thinkorswim before routing.</span>
+                      </div>
+                    )}
+
                     {/* Compact Auxiliary Links */}
                     <div className="flex items-center justify-end gap-3 pt-0.5 text-[10px] text-slate-400">
                       <button
                         type="button"
                         onClick={(e) => handleCopyOrder(dynamicNaturalTosCommand, `natural-${optionPlay.id}`, e)}
                         className="hover:text-sky-300 transition-colors cursor-pointer"
-                        title="Copy entry leg only: BUY +N SINGLE..."
+                        title="Copies calculated theoretical bracket. Verify chain in TOS."
                       >
                         {copiedId === `natural-${optionPlay.id}` ? '✓ Copied Entry' : 'Entry Leg Only'}
                       </button>
@@ -821,7 +829,7 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                         type="button"
                         onClick={(e) => handleCopyOrder(optionPlay.schwabWebSummary, `summary-${optionPlay.id}`, e)}
                         className="hover:text-emerald-300 transition-colors cursor-pointer"
-                        title="Copy complete ticket for Charles Schwab portal"
+                        title="Copies calculated theoretical bracket. Verify chain in TOS."
                       >
                         {copiedId === `summary-${optionPlay.id}` ? '✓ Copied Ticket' : 'Schwab Portal Ticket'}
                       </button>

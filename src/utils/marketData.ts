@@ -65,10 +65,12 @@ export const ASSET_PRESETS: AssetPreset[] = [
 export function generateSyntheticMarketData(
   symbol: string = 'BTC/USDT',
   count: number = 360,
-  startPrice: number = 63500
+  startPrice: number = 63500,
+  frequencyMinutes: number = 60
 ): Candle[] {
   const candles: Candle[] = [];
-  const baseTime = Date.now() - count * 3600 * 1000;
+  const intervalMs = Math.max(1, frequencyMinutes) * 60 * 1000;
+  const baseTime = Date.now() - count * intervalMs;
   let currentPrice = startPrice;
 
   // Parameters based on asset
@@ -86,7 +88,7 @@ export function generateSyntheticMarketData(
   let currentImpulseDirection = 1;
 
   for (let i = 0; i < count; i++) {
-    const timestamp = baseTime + i * 3600 * 1000;
+    const timestamp = baseTime + i * intervalMs;
     const date = new Date(timestamp);
     const dateStr = date.toISOString().replace('T', ' ').substring(0, 16);
 
@@ -170,9 +172,11 @@ export function generateSyntheticMarketData(
  */
 export function generateNextSimulatedCandle(
   lastCandle: Candle,
-  isCrypto: boolean = false
+  isCrypto: boolean = false,
+  frequencyMinutes: number = 60
 ): Candle {
-  const nextTime = lastCandle.time + 3600 * 1000;
+  const intervalMs = Math.max(1, frequencyMinutes) * 60 * 1000;
+  const nextTime = lastCandle.time + intervalMs;
   const date = new Date(nextTime);
   const dateStr = date.toISOString().replace('T', ' ').substring(0, 16);
 

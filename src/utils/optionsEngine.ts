@@ -1,5 +1,5 @@
 import { TradeRecommendation, VolatilityMetrics } from '../types/trading';
-import { getContractPointValue } from './tradeEngine';
+import { getContractPointValue } from './contractSpecs';
 
 export { getContractPointValue };
 
@@ -272,7 +272,7 @@ export function generateSchwabOptionPlay(
   const isFutures = cleanTicker.startsWith('/') || cleanTicker === 'MES' || cleanTicker.includes('MES') || cleanTicker.includes('MNQ') || cleanTicker.includes('ES') || cleanTicker.includes('NQ') || cleanTicker.includes('RTY') || cleanTicker.includes('CL') || cleanTicker.includes('GC');
   const instrumentType: InstrumentType = isFutures ? 'FUTURES_OPTION' : 'EQUITY_OPTION';
   const actualTicker = isFutures ? (cleanTicker.startsWith('/') ? cleanTicker : `/${cleanTicker}`) : cleanTicker;
-  const pointMultiplier = getContractPointValue(actualTicker);
+  const pointMultiplier = getContractPointValue(actualTicker, true);
 
   // Strike Selection based on bias (ITM / ATM / OTM)
   const atmStrike = Math.round(underlying / increment) * increment;
@@ -303,10 +303,25 @@ export function generateSchwabOptionPlay(
     }
   }
 
-  // Snap strike to listed increments and ensure integer for futures options
-  strike = Number((Math.round(strike / increment) * increment).toFixed(2));
+  // Snap strike to listed exchange increments before constructing order strings
   if (isFutures) {
-    strike = Math.round(strike);
+    if (actualTicker.includes('MES') || actualTicker.includes('ES')) {
+      strike = Math.round(underlying / 5) * 5;
+      if (strikeBias === 'ITM') strike = isCall ? strike - 5 : strike + 5;
+      else if (strikeBias === 'OTM') strike = isCall ? strike + 5 : strike - 5;
+    } else if (actualTicker.includes('MNQ') || actualTicker.includes('NQ')) {
+      strike = Math.round(underlying / 25) * 25;
+      if (strikeBias === 'ITM') strike = isCall ? strike - 25 : strike + 25;
+      else if (strikeBias === 'OTM') strike = isCall ? strike + 25 : strike - 25;
+    } else if (actualTicker.includes('RTY')) {
+      strike = Math.round(underlying / 10) * 10;
+      if (strikeBias === 'ITM') strike = isCall ? strike - 10 : strike + 10;
+      else if (strikeBias === 'OTM') strike = isCall ? strike + 10 : strike - 10;
+    } else {
+      strike = Math.round(underlying);
+    }
+  } else {
+    strike = Number((Math.round(strike / increment) * increment).toFixed(2));
   }
 
   // Symbol and Strike Validation

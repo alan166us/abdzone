@@ -32,7 +32,7 @@ export default function App() {
 
   // Market Data Candles
   const [candles, setCandles] = useState<Candle[]>(() => {
-    return generateSyntheticMarketData('SPY', 360, 574);
+    return generateSyntheticMarketData('SPY', 360, 574, 5);
   });
 
   // User-tuned Stop-Loss Volatility Buffer Multiplier (e.g. 1.35x ATR)
@@ -155,7 +155,7 @@ export default function App() {
         });
         setSelectedAsset(cleanSym);
         const isSchwab = data.source === 'schwab-live-api';
-        const isRealFeed = data.source === 'real-market-exchange-feed';
+        const isExchange = data.source === 'real-market-exchange-feed';
         const freqLabel = 
           activeFreq === 1 ? '1m Scalp' :
           activeFreq === 5 ? '5m Intraday' :
@@ -165,13 +165,13 @@ export default function App() {
           activeFreq === 240 ? '4H Trend' : '1D Daily';
 
         setDataSourceInfo({
-          source: data.source || 'exchange-feed',
-          isRealtime: isSchwab || isRealFeed,
+          source: data.source || 'exchange-feed-fallback',
+          isRealtime: isSchwab || isExchange,
           lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-          mode: isSchwab ? 'schwab' : (isRealFeed ? 'exchange' : 'synthetic'),
+          mode: isSchwab ? 'schwab' : (isExchange ? 'exchange' : 'synthetic'),
         });
         if (!isBackgroundPoll) {
-          setNotification(`Loaded ${cleanSym} (${freqLabel} · ${isSchwab ? 'Schwab Real-Time' : isRealFeed ? 'Real Exchange Feed' : 'Synthesized Backup'})`);
+          setNotification(`Loaded ${cleanSym} (${freqLabel} · ${isSchwab ? 'Schwab Real-Time' : isExchange ? 'Real Exchange Feed' : 'Synthesized Backup'})`);
           setTimeout(() => setNotification(null), 3000);
         }
         setIsRefreshing(false);
@@ -199,7 +199,7 @@ export default function App() {
       else if (cleanSym === 'PLTR') startPrice = 192.07;
       else if (cleanSym === 'IREN') startPrice = 41.28;
       else if (cleanSym === 'SPCX') startPrice = 171.92;
-      const fallbackCandles = generateSyntheticMarketData(cleanSym, activeFreq <= 5 ? 120 : 360, startPrice);
+      const fallbackCandles = generateSyntheticMarketData(cleanSym, activeFreq <= 5 ? 120 : 360, startPrice, activeFreq);
       setCandles(fallbackCandles);
       setSelectedAsset(cleanSym);
     }
@@ -317,23 +317,23 @@ export default function App() {
         if (prev.length === 0) return prev;
         const last = prev[prev.length - 1];
         const isCrypto = selectedAsset.includes('BTC') || selectedAsset.includes('ETH');
-        const next = generateNextSimulatedCandle(last, isCrypto);
+        const next = generateNextSimulatedCandle(last, isCrypto, frequency);
         return [...prev.slice(1), next]; // slide window
       });
     }, 1200);
 
     return () => clearInterval(interval);
-  }, [isSimulating, selectedAsset]);
+  }, [isSimulating, selectedAsset, frequency]);
 
   const handleStepCandle = useCallback(() => {
     setCandles((prev) => {
       if (prev.length === 0) return prev;
       const last = prev[prev.length - 1];
       const isCrypto = selectedAsset.includes('BTC') || selectedAsset.includes('ETH');
-      const next = generateNextSimulatedCandle(last, isCrypto);
+      const next = generateNextSimulatedCandle(last, isCrypto, frequency);
       return [...prev.slice(1), next];
     });
-  }, [selectedAsset]);
+  }, [selectedAsset, frequency]);
 
   // Zone selection from Radar or List
   const handleSelectZone = (zone: SupplyDemandZone) => {
