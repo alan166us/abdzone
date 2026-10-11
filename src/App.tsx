@@ -155,7 +155,7 @@ export default function App() {
         });
         setSelectedAsset(cleanSym);
         const isSchwab = data.source === 'schwab-live-api';
-        const isExchange = data.source === 'real-market-exchange-feed';
+        const isLive = isSchwab;
         const freqLabel = 
           activeFreq === 1 ? '1m Scalp' :
           activeFreq === 5 ? '5m Intraday' :
@@ -166,14 +166,18 @@ export default function App() {
 
         setDataSourceInfo({
           source: data.source || 'exchange-feed-fallback',
-          isRealtime: isSchwab || isExchange,
-          lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-          mode: isSchwab ? 'schwab' : (isExchange ? 'exchange' : 'synthetic'),
+          isRealtime: isLive,
+          lastUpdated: new Date().toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+          }),
+          mode: isLive ? 'schwab' : 'synthetic',
         });
         if (!isBackgroundPoll) {
           setSelectedZoneId(null);
           setSelectedRecommendation(null);
-          setNotification(`Loaded ${cleanSym} (${freqLabel} · ${isSchwab ? 'Schwab Real-Time' : isExchange ? 'Real Exchange Feed' : 'Synthesized Backup'})`);
+          setNotification(`Loaded ${cleanSym} (${freqLabel} · ${isLive ? 'Schwab Real-Time' : 'Exchange Feed Fallback'})`);
           setTimeout(() => setNotification(null), 3000);
         }
         setIsRefreshing(false);

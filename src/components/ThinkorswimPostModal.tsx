@@ -151,6 +151,12 @@ export const ThinkorswimPostModal: React.FC<ThinkorswimPostModalProps> = ({
   const fullTosOrderSetSummary = generateTosFullOrderSetSummary(optionPlay, effectiveQty);
 
   const handleCopy = (text: string, type: string) => {
+    if (orderMode === 'options' && optionPlay?.isModelEstimate) {
+      const ok = window.confirm(
+        'This ticket uses ESTIMATED premiums (not live quotes).\nHave you verified live bid/ask on thinkorswim / Schwab?\n\nOK = copy anyway'
+      );
+      if (!ok) return;
+    }
     navigator.clipboard.writeText(text);
     setCopiedType(type);
     setTimeout(() => setCopiedType(null), 2500);

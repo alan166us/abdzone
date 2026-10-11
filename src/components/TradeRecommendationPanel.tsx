@@ -106,6 +106,12 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
 
   const handleCopyOrder = (text: string, id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (text.includes('ESTIMATE') || text.includes('MODEL ESTIMATE')) {
+      const ok = window.confirm(
+        'This ticket uses ESTIMATED premiums (not live quotes).\nHave you verified live bid/ask on thinkorswim / Schwab?\n\nOK = copy anyway'
+      );
+      if (!ok) return;
+    }
     navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);

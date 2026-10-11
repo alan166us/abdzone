@@ -350,8 +350,24 @@ export function generateSchwabOptionPlay(
     strike = Number((Math.round(strike / increment) * increment).toFixed(2));
   }
 
-  // Symbol and Strike Validation
-  validateTosSymbol(actualTicker, strike);
+  // Symbol and Strike Validation with snapping fallback
+  let validation = validateTosSymbol(actualTicker, strike);
+  if (!validation.valid) {
+    if (actualTicker.includes('MES') || actualTicker.includes('ES')) {
+      strike = Math.round(strike / 5) * 5;
+    } else if (actualTicker.includes('MNQ') || actualTicker.includes('NQ')) {
+      strike = Math.round(strike / 25) * 25;
+    } else if (actualTicker.includes('RTY')) {
+      strike = Math.round(strike / 10) * 10;
+    } else {
+      strike = Number((Math.round(strike / Math.max(increment, 0.5)) * Math.max(increment, 0.5)).toFixed(2));
+    }
+    validation = validateTosSymbol(actualTicker, strike);
+    if (!validation.valid) {
+      console.warn('[optionsEngine] Strike still invalid after snap:', validation.reason);
+      return null;
+    }
+  }
 
   // Model option premium and Greeks dynamically
   const hv = volatilityMetrics.annualizedHV ? volatilityMetrics.annualizedHV / 100 : 0.26;
