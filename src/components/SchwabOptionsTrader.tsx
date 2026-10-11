@@ -5,11 +5,14 @@ import {
   formatTosOptionCommand,
   formatTosNaturalOptionCommand,
   formatTosNaturalOptionExitCommand,
+  formatTosCompoundStockOrFuturesBracketCommand,
+  formatTosStockOrFuturesCommand,
   generateTosFullOrderSetSummary,
   SchwabOptionContractRecommendation, 
   ExpirationStyle, 
   StrikeBias 
 } from '../utils/optionsEngine';
+import { getContractPointValue } from '../utils/contractSpecs';
 import { 
   Building2, 
   Crosshair, 
@@ -71,6 +74,11 @@ export const SchwabOptionsTrader: React.FC<SchwabOptionsTraderProps> = ({
   const [contractQty, setContractQty] = useState<number>(2);
   const [copiedType, setCopiedType] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'ticket' | 'bracket' | 'matrix'>('ticket');
+  const [futuresTradeMode, setFuturesTradeMode] = useState<'options' | 'outright'>('options');
+
+  const cleanSym = (symbol || '').replace(/^(SCHWAB:|EXCHANGE:)/, '').trim().toUpperCase();
+  const isFutures = cleanSym.startsWith('/') || cleanSym === 'MES' || cleanSym.includes('MES') || cleanSym.includes('MNQ') || cleanSym.includes('ES') || cleanSym.includes('NQ') || cleanSym.includes('RTY') || cleanSym.includes('CL') || cleanSym.includes('GC');
+  const actualTicker = isFutures ? (cleanSym.startsWith('/') ? cleanSym : `/${cleanSym}`) : cleanSym;
 
   const activeRec = selectedRecommendation || recommendations[0];
 
@@ -104,6 +112,22 @@ export const SchwabOptionsTrader: React.FC<SchwabOptionsTraderProps> = ({
   const totalMaxLoss = Math.abs(optionPlay.stopLoss.lossPerContract) * contractQty;
   const totalTargetProfit = optionPlay.target.profitPerContract * contractQty;
   const isCall = optionPlay.optionType === 'CALL';
+
+  const outrightMultiplier = getContractPointValue(actualTicker, false);
+  const outrightRiskPerContract = Math.abs(activeRec.entry - activeRec.stopLoss) * outrightMultiplier;
+  const outrightRewardPerContract = Math.abs(activeRec.takeProfit2 - activeRec.entry) * outrightMultiplier;
+  const outrightTotalRisk = outrightRiskPerContract * contractQty;
+  const outrightTotalReward = outrightRewardPerContract * contractQty;
+  const outrightRR = outrightRiskPerContract > 0 ? outrightRewardPerContract / outrightRiskPerContract : 2.5;
+
+  const outrightCompoundTosCommand = formatTosCompoundStockOrFuturesBracketCommand(
+    actualTicker,
+    activeRec.side,
+    contractQty,
+    activeRec.entry,
+    activeRec.stopLoss,
+    activeRec.takeProfit2
+  );
 
   return (
     <div className="h-full flex flex-col min-h-0 bg-[#0B0F17] overflow-y-auto">
@@ -218,6 +242,198 @@ export const SchwabOptionsTrader: React.FC<SchwabOptionsTraderProps> = ({
           </div>
         )}
 
+        {/* Futures Execution Mode Selector */}
+        {isFutures && (
+          <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-slate-900/90 border border-slate-800 rounded-xl font-mono text-xs">
+            <div className="flex items-center gap-2">
+              <span className="text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
+                Execution Instrument:
+              </span>
+              <span className="text-sky-300 font-bold">
+                {actualTicker} CME Active Asset
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-lg border border-slate-800">
+              <button
+                type="button"
+                onClick={() => setFuturesTradeMode('outright')}
+                className={`py-1.5 px-3 rounded-md transition-colors font-semibold flex items-center gap-1.5 ${
+                  futuresTradeMode === 'outright'
+                    ? 'bg-slate-800 text-white shadow-xs border border-slate-700'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title={`Outright ${actualTicker} contract`}
+              >
+                <span>Outright Futures Contract ({actualTicker})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setFuturesTradeMode('options')}
+                className={`py-1.5 px-3 rounded-md transition-colors font-semibold flex items-center gap-1.5 ${
+                  futuresTradeMode === 'options'
+                    ? 'bg-sky-600 text-white shadow-xs'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="CME Futures Option (/MS)"
+              >
+                <Building2 className="w-3.5 h-3.5" />
+                <span>CME Futures Option (/MS)</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {isFutures && futuresTradeMode === 'outright' ? (
+          /* OUTRIGHT FUTURES CONTRACT VIEW */
+          <div className="space-y-4">
+            {/* Header */}
+            <div className="p-4 rounded-xl bg-gradient-to-r from-slate-900 via-slate-950 to-slate-900 border border-slate-800 flex flex-wrap items-center justify-between gap-4 font-mono">
+              <div className="flex items-center gap-3">
+                <span className={`px-3 py-1.5 rounded-lg text-sm font-bold border ${
+                  activeRec.side === 'long'
+                    ? 'bg-emerald-950 text-emerald-300 border-emerald-700/80'
+                    : 'bg-rose-950 text-rose-300 border-rose-700/80'
+                }`}>
+                  {activeRec.side === 'long' ? 'BUY' : 'SELL'} {actualTicker} OUTRIGHT CONTRACT
+                </span>
+                <div>
+                  <div className="text-xs text-slate-300 font-semibold">
+                    CME E-mini/Micro Futures · Point Value: ${outrightMultiplier.toFixed(2)}/pt
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">
+                    Tick Size: 0.25 pt (${(outrightMultiplier * 0.25).toFixed(2)}/tick)
+                  </div>
+                </div>
+              </div>
+
+              {/* Quantity Selector */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400">Contracts:</span>
+                <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+                  {[1, 2, 3, 5].map((qty) => (
+                    <button
+                      key={qty}
+                      type="button"
+                      onClick={() => setContractQty(qty)}
+                      className={`px-2.5 py-1 rounded text-xs transition-colors ${
+                        contractQty === qty
+                          ? 'bg-sky-600 text-white font-bold'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {qty}
+                    </button>
+                  ))}
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={contractQty}
+                    onChange={(e) => setContractQty(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="w-12 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-center text-white focus:outline-none focus:border-sky-500 text-xs"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* S.E.T. Execution Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 font-mono">
+              {/* 1. ENTRY */}
+              <div className="p-3.5 rounded-xl bg-slate-900/90 border border-sky-900/60">
+                <div className="text-[10px] text-sky-400 font-bold uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                  <Crosshair className="w-3.5 h-3.5" /> 1. Entry Limit
+                </div>
+                <div className="text-lg font-bold text-sky-300 tabular-nums">
+                  ${activeRec.entry.toFixed(2)}
+                </div>
+                <div className="text-[11px] text-slate-400 mt-1">
+                  Outer zone boundary ({activeRec.side === 'long' ? 'Demand' : 'Supply'})
+                </div>
+                <div className="text-[10px] text-sky-400/80 mt-1">
+                  {contractQty} {contractQty > 1 ? 'Contracts' : 'Contract'} @ ${outrightMultiplier.toFixed(2)}/pt
+                </div>
+              </div>
+
+              {/* 2. STOP-LOSS */}
+              <div className="p-3.5 rounded-xl bg-slate-900/90 border border-rose-900/60">
+                <div className="text-[10px] text-rose-400 font-bold uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5" /> 2. Hard Stop-Loss (STP)
+                </div>
+                <div className="text-lg font-bold text-rose-400 tabular-nums">
+                  ${activeRec.stopLoss.toFixed(2)}
+                </div>
+                <div className="text-[11px] text-rose-400/90 mt-1 font-semibold">
+                  -${outrightTotalRisk.toFixed(2)} Max Loss (-${outrightRiskPerContract.toFixed(2)}/ct)
+                </div>
+                <div className="text-[10px] text-slate-500 mt-1">
+                  Buffer: ±{activeRec.bufferAtrMultiplier.toFixed(1)}x ATR beyond zone
+                </div>
+              </div>
+
+              {/* 3. TARGET */}
+              <div className="p-3.5 rounded-xl bg-slate-900/90 border border-emerald-900/60">
+                <div className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                  <Target className="w-3.5 h-3.5" /> 3. Target TP2 (Limit)
+                </div>
+                <div className="text-lg font-bold text-emerald-400 tabular-nums">
+                  ${activeRec.takeProfit2.toFixed(2)}
+                </div>
+                <div className="text-[11px] text-emerald-400/90 mt-1 font-semibold">
+                  +${outrightTotalReward.toFixed(2)} Profit (+${outrightRewardPerContract.toFixed(2)}/ct)
+                </div>
+                <div className="text-[10px] text-slate-500 mt-1">
+                  R:R Ratio 1:{outrightRR.toFixed(1)} · Score {activeRec.qualityScore}%
+                </div>
+              </div>
+            </div>
+
+            {/* thinkorswim 1st Triggers OCO Bracket Command */}
+            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 font-mono space-y-3">
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <div className="flex items-center gap-2">
+                  <Terminal className="w-4 h-4 text-emerald-400" />
+                  <span className="font-bold text-emerald-400 uppercase tracking-wider">
+                    thinkorswim 1st Triggers OCO Futures Bracket
+                  </span>
+                </div>
+                <span className="text-[11px] text-slate-500">
+                  {contractQty} {contractQty > 1 ? 'Contracts' : 'Contract'}
+                </span>
+              </div>
+
+              <div className="p-3 rounded-lg bg-slate-900/90 border border-slate-800 text-xs text-emerald-300 font-bold select-all break-all">
+                {outrightCompoundTosCommand}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => handleCopy(outrightCompoundTosCommand, 'tos-outright')}
+                  className="py-2.5 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center gap-2 transition-all shadow-md shadow-emerald-950/50 active:scale-[0.99] cursor-pointer"
+                >
+                  {copiedType === 'tos-outright' ? (
+                    <>
+                      <Check className="w-4 h-4 text-emerald-200" />
+                      <span>Copied TOS Futures Bracket!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      <span>Copy TOS Futures Bracket Command</span>
+                    </>
+                  )}
+                </button>
+
+                <div className="text-[11px] text-slate-400">
+                  <span>TP1: <strong>${activeRec.takeProfit1.toFixed(2)}</strong></span>
+                  <span className="mx-2 text-slate-600">·</span>
+                  <span>TP3: <strong>${activeRec.takeProfit3.toFixed(2)}</strong></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <>
         {/* Contract Configurator: Expiration, Strike Bias & Quantity */}
         <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Expiration Style */}
@@ -1045,6 +1261,8 @@ export const SchwabOptionsTrader: React.FC<SchwabOptionsTraderProps> = ({
             </div>
           )}
         </div>
+          </>
+        )}
       </div>
     </div>
   );

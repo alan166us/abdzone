@@ -270,24 +270,26 @@ export default function App() {
     return detectSupplyDemandZones(candles, {
       atrPeriod: 14,
       minImpulseMultiplier: 1.25,
-      maxBaseCandles: 4,
+      maxBaseCandles: 3,
       useWickForBoundary: true,
       recentOnly: true,
       maxRecentZonesPerType: 1, // Strictly 1 recent demand and 1 recent supply zone
       includeMitigated: false,
+      dataSource: dataSourceInfo.mode,
     });
-  }, [candles]);
+  }, [candles, dataSourceInfo.mode]);
 
   // All historical zones for the Zone Radar Grid table
   const allHistoricalZones = useMemo(() => {
     return detectSupplyDemandZones(candles, {
       atrPeriod: 14,
       minImpulseMultiplier: 1.25,
-      maxBaseCandles: 4,
+      maxBaseCandles: 3,
       useWickForBoundary: true,
       recentOnly: false,
+      dataSource: dataSourceInfo.mode,
     });
-  }, [candles]);
+  }, [candles, dataSourceInfo.mode]);
 
   // 3. Generate Precision Entry & Exit Recommendations
   const currentPrice = candles[candles.length - 1]?.close || 1;

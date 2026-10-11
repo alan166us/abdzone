@@ -171,33 +171,29 @@ Keep the prose crisp, authoritative, formatted in clean Markdown, without market
       chosenModel = 'gemini-3.8-flash';
     }
 
-    let rolePersonaPrompt = `Senior Options Trading Coach & Dedicated Partner speaking in clear, friendly, and empowering daily language.
-You and the user are trading partners working together to build consistent daily and weekly cashflow while rigorously protecting capital with strictly limited downside risk.
-You possess world-class options mastery and explain every concept in accessible real-world terms:
-1. DAILY CASHFLOW & THETA ENGINE:
-   - How time decay (Theta) pays us daily rent when selling out-of-the-money credit spreads or collecting premium at demand/supply zones.
-   - Why 0.20 to 0.30 Delta gives us a 75% to 85% statistical Probability of Profit (POP).
-2. STRICTLY LIMITED DOWNSIDE RISK (NO NAKED TRADES):
-   - We NEVER take on open-ended downside risk. We only use defined-risk structures (e.g. Bull Put Credit Spreads, Bear Call Credit Spreads, Iron Condors, or Defined Debit Spreads / Long Options where max risk is 100% capped to the premium paid).
-   - Our protective "spread wings" guarantee the absolute worst-case loss is known to the exact penny before opening the order.
-3. THE 50% PROFIT RULE (VELOCITY OF CAPITAL):
-   - We do not get greedy and hold until expiration Friday when wild Gamma swings can wipe out gains. We take 50% to 60% of maximum profit off the table early, bank the cash, and move on.
-4. MARKET STORY & BACKGROUND:
-   - Tell the story of what price has been doing recently (surging, pulling back to wholesale support, consolidating, or resting) and why it creates this cashflow window.
-5. THE "WHY" BEHIND EVERY PARAMETER:
-   - The Entry: Why waiting for wholesale discount at a zone beats chasing green candles.
-   - The Stop-Loss & ATR Buffer: Why our stop has breathing room to avoid algorithm liquidity sweeps.
-   - The Targets: Staged exits (Target 1 takes risk off table; Target 2 is before the overhead supply wall).
-6. THINKORSWIM & SCHWAB ORDER EXECUTION:
-   - Guide the user on how to post OCO brackets (1 entry, stop-loss, and staged profit targets) cleanly.
-Speak as an encouraging, sharp, and trustworthy partner who is in the trenches with them.`;
+    const rolePersonaPrompt = `You are the user's dedicated trading partner and options coach in the trenches together.
+Your mission is simple: build steady daily/weekly cashflow while protecting capital with strictly defined downside risk.
 
+TONE & STYLE:
+- Speak in warm, authentic, clear, and encouraging conversational English (like two focused partners reviewing the desk together).
+- Zero robotic setups, stiff corporate jargon, or fake hype. Speak with humble confidence and candid clarity.
+- Ground every insight directly in live market numbers (Spot, ATR, Zone Boundaries).
+- Use clear, vivid, everyday analogies (wholesale sale vs retail chase, trampolines, giving trades breathing room).
+- Format responses cleanly with short paragraphs, bold key prices, and actionable bullet points.
+
+CORE MENTAL MODELS:
+1. Daily Cashflow: Harvesting steady theta decay without getting greedy. Lock in 50% profit early and recycle capital.
+2. Capital Protection: Zero naked trades. Spread wings keep worst-case loss mathematically capped to the penny.
+3. Patient Execution: Never chase price in 'no-man's land'. Let the wholesale entry come to us or step aside.
+4. The 'Why' Behind the Levels: Always explain why the entry is wholesale, why the ATR buffer protects against liquidity sweeps, and where opposing walls sit.`;
+
+    let activePersona = rolePersonaPrompt;
     if (role === 'quant') {
-      rolePersonaPrompt = 'Senior Quantitative Order Flow Specialist. Focus on supply/demand zone validation, volume imbalances, and SMC patterns.';
+      activePersona = `${rolePersonaPrompt}\n\nSPECIALTY: Quant order flow focus, institutional supply/demand zone validation, volume ratios, and SMC patterns.`;
     } else if (role === 'risk_architect' || chosenModel === 'gemini-3.1-pro-preview') {
-      rolePersonaPrompt = 'Chief Market Technician & Deep Risk Architect. Perform in-depth statistical analysis, expected value modeling, drawdown prevention, and ATR stop-loss buffer mathematics.';
+      activePersona = `${rolePersonaPrompt}\n\nSPECIALTY: Deep risk architect focus, expected value mathematics, and ATR stop-loss buffer discipline.`;
     } else if (role === 'fast_scalp' || chosenModel === 'gemini-3.1-flash-lite') {
-      rolePersonaPrompt = 'Ultra-Fast Scalp & Volatility Assistant. Provide rapid, concise, bulleted key levels, immediate trigger prices, and quick stop-loss placements.';
+      activePersona = `${rolePersonaPrompt}\n\nSPECIALTY: Fast execution focus, concise key levels, rapid trigger prices, and tight risk controls.`;
     }
 
     if (apiKey && apiKey !== 'MY_GEMINI_API_KEY') {
@@ -211,7 +207,7 @@ Speak as an encouraging, sharp, and trustworthy partner who is in the trenches w
           },
         });
 
-        const systemInstruction = `You are StrataZone's institutional AI Market Copilot configured as: ${rolePersonaPrompt} (Running on ${chosenModel}).
+        const systemInstruction = `You are StrataZone's institutional AI Market Copilot configured as: ${activePersona} (Running on ${chosenModel}).
 You are in a multi-turn conversation with an active trader reviewing the chart terminal. Maintain full conversation context and answer questions directly.
 
 LIVE MARKET SNAPSHOT:
@@ -1138,50 +1134,51 @@ function generateDailyDebrief(
   const freshSupply = zones?.find((z: any) => z.type === 'supply' && z.testedCount === 0);
   const primaryRec = recommendations?.[0];
 
-  return `### 🎙️ Plain English Market Briefing: What is ${symbol} Doing & Why?
+  return `### 🎙️ Desk Debrief with Your Trading Partner: What is ${symbol} Doing & Why?
 
-**The Big Picture Right Now:**
-${symbol} is currently trading around **$${currentPrice?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}**. Rather than jumping in blindly, here is the real story of what buyers and sellers are doing behind the scenes.
+Hey partner, let's look at the desk together on **${symbol}** (currently sitting around **$${currentPrice?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}**).
 
----
-
-### 1. 📖 Market Movement Story: Where Are We Right Now?
-* **Recent Behavior:** The market has been swinging with an average move (ATR) of about **$${atr.toFixed(2)}** per candle. Price is currently caught between two major battlegrounds: a floor of buyers down below and a ceiling of sellers overhead.
-* **The Buyer Floor (Demand Zone):** ${freshDemand ? `Down at **$${freshDemand.low.toFixed(2)} – $${freshDemand.high.toFixed(2)}**, big institutional buyers stepped in aggressively earlier, driving price up fast. Because price hasn't revisited this level yet, plenty of buy orders are likely still sitting there waiting like a trampoline.` : `Key support rests lower at prior swing lows.`}
-* **The Seller Ceiling (Supply Zone):** ${freshSupply ? `Up at **$${freshSupply.low.toFixed(2)} – $${freshSupply.high.toFixed(2)}**, sellers previously dumped supply. That area acts as a roof where sellers will likely push back.` : `Key resistance sits up near recent session highs.`}
+Rather than chasing price in no-man's land, here is the honest story of where supply and demand are parked right now:
 
 ---
 
-### 2. 🎯 The "Why" Behind the Recommended Setup
+### 1. 📖 The Market Story: What Just Happened?
+* **Current Energy (ATR):** The market is swinging with an average move of about **$${atr.toFixed(2)}** per candle. Price is currently oscillating between two clear institutional battlegrounds: a buyer trampoline down below and a seller ceiling overhead.
+* **The Buyer Floor (Demand Zone):** ${freshDemand ? `Down between **$${freshDemand.low.toFixed(2)} – $${freshDemand.high.toFixed(2)}**, big institutional buyers stepped in with aggressive volume earlier, launching price upward. Because price hasn't retested this area yet, fresh resting buy orders are waiting here like an elastic trampoline.` : `Major support rests at prior structural swing lows.`}
+* **The Seller Ceiling (Supply Zone):** ${freshSupply ? `Up between **$${freshSupply.low.toFixed(2)} – $${freshSupply.high.toFixed(2)}**, sellers previously dumped heavy supply. That ceiling will act as an overhead wall where sellers look to reject higher prices.` : `Major resistance sits near recent session highs.`}
+
+---
+
+### 2. 🎯 The Setup & The "Why" Behind the Levels
 ${primaryRec ? `
-We are looking at a **${primaryRec.side.toUpperCase()}** setup (${primaryRec.side === 'long' ? 'Call Option / Buy' : 'Put Option / Short'}) targeting an entry at **$${primaryRec.entry.toFixed(2)}**:
+We are looking at a **${primaryRec.side.toUpperCase()}** setup (${primaryRec.side === 'long' ? 'Call Option / Bullish Pullback' : 'Put Option / Bearish Retest'}) targeting an entry at **$${primaryRec.entry.toFixed(2)}**:
 
 * **Why Enter at $${primaryRec.entry.toFixed(2)}?**
-  Instead of chasing price right now while it floats in the middle ("no-man's land"), we wait for a pullback to **$${primaryRec.entry.toFixed(2)}**. Think of it like waiting for an item to go on sale at wholesale discount instead of paying retail price at the peak.
+  Never chase green or red candles midway in 'no-man's land'. Waiting for **$${primaryRec.entry.toFixed(2)}** lets the market come to our wholesale discount price, keeping our risk minimal while giving us maximum runway.
 
 * **Why is the Stop-Loss at $${primaryRec.stopLoss.toFixed(2)} (Breathing Room)?**
-  We gave the trade an extra **${mult}x ATR buffer** (about $${(atr * parseFloat(mult)).toFixed(2)} of extra cushion).
-  *Why?* Because market makers frequently create quick "wicks" or head-fakes just past the obvious boundary to shake out weak retail traders before reversing in the intended direction. This cushion keeps you safe through normal market noise, and only triggers if the trade idea is genuinely broken.
+  We padded the distal line with an extra **${mult}x ATR buffer** (about $${(atr * parseFloat(mult)).toFixed(2)} of breathing room).
+  Market makers love pulling quick liquidity sweeps right past obvious lines to shake out retail stops before reversing. This buffer protects our position through ordinary intraday noise and only cuts the trade if our thesis is genuinely dead.
 
 * **Why These Profit Targets ($${primaryRec.takeProfit1.toFixed(2)} / $${primaryRec.takeProfit2.toFixed(2)} / $${primaryRec.takeProfit3.toFixed(2)})?**
-  * **Target 1 ($${primaryRec.takeProfit1.toFixed(2)}):** Takes quick chips off the table (1:2 risk/reward). Once hit, you lock in gains and move your stop to breakeven for a "stress-free trade".
-  * **Target 2 ($${primaryRec.takeProfit2.toFixed(2)}):** Sits right in front of the major opposing supply/demand wall before sellers can push back.
-  * **Target 3 ($${primaryRec.takeProfit3.toFixed(2)}):** A "runner" position to catch an extended trend if the breakout goes ballistic.
-` : `* We are waiting for price to test a pristine wholesale zone before committing capital.`}
+  * **Target 1 ($${primaryRec.takeProfit1.toFixed(2)}):** Locks in a clean 1:2 risk/reward. Take 50% profit off the table here and slide your stop to breakeven for a completely risk-free ride.
+  * **Target 2 ($${primaryRec.takeProfit2.toFixed(2)}):** Positioned right before the opposing supply wall so we exit into strength before sellers can push back.
+  * **Target 3 ($${primaryRec.takeProfit3.toFixed(2)}):** A small runner to capture explosive trend continuations if momentum expands.
+` : `* We are patiently waiting for price to touch a pristine wholesale zone before committing capital. No setups forced.`}
 
 ---
 
-### 3. ☕ Today's Plain English Game Plan
-1. **Be Patient:** Do not FOMO enter market orders when price is midway between zones. Let the market come to your price.
-2. **Use an OCO Bracket:** Set your Entry, Stop, and Target simultaneously so you don't have to watch every single tick.
-3. **Respect the Line:** If a candle body closes solidly beyond $${primaryRec ? primaryRec.stopLoss.toFixed(2) : 'the stop'}, the setup has failed. Step aside and wait for the next pitch!
+### 3. ☕ Plain English Checklist for Today
+1. **Be Patient:** Let the wholesale entry come to us. If price doesn't hit our number, we step aside without regret.
+2. **Use an OCO Bracket:** Set your Entry Limit, Stop, and Target simultaneously so thinkorswim or Schwab manages the bracket automatically.
+3. **Respect the Line:** If a candle body closes beyond $${primaryRec ? primaryRec.stopLoss.toFixed(2) : 'the stop'}, the setup has failed. Flatten the trade, keep losses small, and wait for the next pitch!
 
 ---
 
-### 4. 🤝 Options Partner Playbook: Daily Cashflow & Limited Downside Risk
-* **The Cashflow Engine (Theta Decay):** When taking defined options or credit spreads at wholesale demand/supply floors, every day that ticks by pays us time decay rent.
-* **Strictly Limited Downside Risk:** Never trade naked. Buying protective wings caps maximum dollar risk to the exact penny before placing the trade.
-* **The 50% Profit Rule:** When Target 1 hits, take profit on 50% of your contracts and slide your stop to breakeven. Bank your daily cashflow, sleep easy, and recycle capital for tomorrow's opportunities!`;
+### 4. 🤝 Partner Cashflow Rule: Limited Downside, Steady Income
+* **The Cashflow Engine (Theta Decay):** Defined options and credit spreads at strong demand/supply levels let time decay pay us daily rent while price respects our floor.
+* **Zero Naked Trades:** Our wings keep worst-case loss mathematically capped to the exact penny before we route the order.
+* **The 50% Profit Rule:** When Target 1 hits, bank 50% profit early, slide the stop to breakeven, and recycle your capital into tomorrow's opportunities!`;
 }
 
 startServer();

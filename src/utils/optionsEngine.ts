@@ -227,7 +227,7 @@ function formatOccSymbol(ticker: string, expIso: string, type: 'CALL' | 'PUT', s
   const typeLetter = type === 'CALL' ? 'C' : 'P';
 
   if (isFutures) {
-    // CME Futures Options OCC format: e.g. /MS261023C5800 for /MES or /MS[EXP][C/P][STRIKE]
+    // CME Futures Options OCC format: e.g. /MS261023C7865 for /MES or /MS[EXP][C/P][STRIKE]
     let root = '/MS';
     if (clean.includes('MES')) root = '/MS';
     else if (clean.includes('MNQ')) root = '/MQ';
@@ -235,7 +235,7 @@ function formatOccSymbol(ticker: string, expIso: string, type: 'CALL' | 'PUT', s
     else if (clean.includes('/NQ') || clean === 'NQ') root = '/NQ';
     else if (clean.startsWith('/')) root = clean;
     else root = `/${clean}`;
-    return `${root}${yy}${mm}${dd}${typeLetter}${strike}`;
+    return `${root}${yy}${mm}${dd}${typeLetter}${Math.round(strike)}`;
   }
 
   const cleanTicker = clean.padEnd(6, ' ').slice(0, 6);
@@ -446,9 +446,7 @@ export function generateSchwabOptionPlay(
 
   // thinkorswim Single Limit Order
   const tosVerifiedSingleCommand = isFutures
-    ? (isCall
-        ? `BUY +1 ${actualTicker} @${rec.entry.toFixed(2)} LMT`
-        : `SELL +1 ${actualTicker} @${rec.entry.toFixed(2)} LMT`)
+    ? `BUY +1 ${actualTicker} ${tosStr} ${strike} ${optionTypeStr} @${entryPremium.toFixed(2)} LMT`
     : `BUY +1 ${tosDotSymbol} @${entryPremium.toFixed(2)} LMT`;
 
   // thinkorswim Natural Language Order Command

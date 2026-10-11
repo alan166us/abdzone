@@ -5,11 +5,12 @@ import { calculateSessionVwap, getZoneVwapConfluence } from './vwapEngine';
 export interface ZoneDetectorOptions {
   atrPeriod?: number;
   minImpulseMultiplier?: number; // Multiple of ATR to qualify as impulse (default 1.25)
-  maxBaseCandles?: number;        // Max consolidation candles in base (default 4)
+  maxBaseCandles?: number;        // Max consolidation candles in base (default 3, strict institutional limit)
   useWickForBoundary?: boolean;   // True to use full wicks (default true for precise chart alignment)
   recentOnly?: boolean;           // Keep only the recent demand and supply zones (default true)
   maxRecentZonesPerType?: number; // Max recent unmitigated zones to retain per type (default 1)
   includeMitigated?: boolean;     // Whether to include broken/mitigated zones in recent mode (default false)
+  dataSource?: string;            // 'schwab' | 'exchange' | 'synthetic'
 }
 
 /**
@@ -50,11 +51,12 @@ export function detectSupplyDemandZones(
   const {
     atrPeriod = 14,
     minImpulseMultiplier = 1.20,
-    maxBaseCandles = 4,
+    maxBaseCandles = 3, // Disallow bases with > 3 candles (strict institutional accumulation)
     useWickForBoundary = true, // Default to true so zone boxes cleanly wrap candle wicks
     recentOnly = true, // Default to true: keep only recent demand and supply zones
     maxRecentZonesPerType = 1, // Default to 1: keep strictly 1 recent demand and 1 recent supply zone
     includeMitigated = false, // Keep false by default to prevent chart clutter
+    dataSource,
   } = options;
 
   if (candles.length < 20) return [];
@@ -102,18 +104,23 @@ export function detectSupplyDemandZones(
     let baseStartIdx = -1;
     let baseEndIdx = impulseStartIdx - 1;
 
-    for (let k = 0; k < maxBaseCandles; k++) {
+    // Disallow bases with > 3 candles (strict institutional accumulation)
+    const effectiveMaxBaseCandles = Math.min(3, maxBaseCandles);
+
+    for (let k = 0; k < effectiveMaxBaseCandles; k++) {
       const idx = baseEndIdx - k;
       if (idx < 2) break;
       const bCandle = candles[idx];
+      const currentAtr = atrs[idx] || atr;
       const bBody = Math.abs(bCandle.close - bCandle.open);
       const bRange = bCandle.high - bCandle.low;
 
-      // Base candles have modest bodies (indecision, pause, resting orders)
-      const isIndecision = bRange > 0 ? (bBody / bRange) <= 0.65 : true;
-      const isTightRange = bBody <= atr * 0.9 && bRange <= atr * 1.4;
+      // Enforce institutional pause criteria:
+      const isIndecision = bRange > 0 ? (bBody / bRange) <= 0.45 : true;
+      const isTightRange = bBody <= (currentAtr * 0.50) && bRange <= (currentAtr * 0.85);
+      const isValidBase = isIndecision || isTightRange;
 
-      if (isIndecision || isTightRange) {
+      if (isValidBase) {
         baseStartIdx = idx;
       } else {
         // If not a base candle, stop scanning backwards
@@ -127,7 +134,8 @@ export function detectSupplyDemandZones(
     }
 
     const baseCandles = candles.slice(baseStartIdx, baseEndIdx + 1);
-    if (baseCandles.length === 0) continue;
+    // Strict institutional rule: disallow bases with > 3 candles
+    if (baseCandles.length === 0 || baseCandles.length > 3) continue;
 
     // Calculate baseline volume (rolling 20-period average volume prior to base)
     const volLookback = Math.min(20, baseStartIdx);
@@ -332,21 +340,42 @@ export function detectSupplyDemandZones(
     const proximalLine = type === 'demand' ? Number(zoneHigh.toFixed(2)) : Number(zoneLow.toFixed(2));
     const distalLine = type === 'demand' ? Number(zoneLow.toFixed(2)) : Number(zoneHigh.toFixed(2));
 
+    // Stamp zone with active session VWAP at formation (ending candle of the consolidation base)
+    const vwapAtFormation = sessionVwap[baseEndIdx] ? sessionVwap[baseEndIdx].vwap : undefined;
+
     // Institutional VWAP Alignment & Value Confluence
-    const vwapConfluence = getZoneVwapConfluence(type, proximalLine, currentVwapPoint);
+    const vwapConfluence = getZoneVwapConfluence(type, proximalLine, sessionVwap[baseEndIdx] || currentVwapPoint, dataSource);
     if (vwapConfluence.scoreBonus > 0) {
       score += vwapConfluence.scoreBonus;
       confluenceTags.push(vwapConfluence.tag);
     }
 
-    score = Math.max(10, Math.min(99, score));
+    // Transparent Heuristic Quality Scoring (bounded strictly 0-100):
+    // 1. Freshness: 0 tests = +30, 1 test = +15, >=2 tests = 0
+    // 2. Departure Velocity: ERC >= 1.5x ATR = +25
+    // 3. Volume Ratio: Wholesale Imbalance >= 1.5x = +25
+    // 4. VWAP Band Confluence at formation: At or beyond 1-sigma / 2-sigma = +20
+    let heuristicScore = 0;
+    if (testedCount === 0) {
+      heuristicScore += 30;
+    } else if (testedCount === 1) {
+      heuristicScore += 15;
+    }
 
-    // Win Rate Probability Estimation based on composite institutional score
-    const winProbabilityEstimate = 
-      score >= 85 ? 84 :
-      score >= 75 ? 78 :
-      score >= 65 ? 70 :
-      score >= 50 ? 56 : 42;
+    if (departureVelocity >= 1.5) {
+      heuristicScore += 25;
+    }
+
+    if (volumeImbalanceRatio >= 1.5) {
+      heuristicScore += 25;
+    }
+
+    if (vwapConfluence.scoreBonus > 0) {
+      heuristicScore += 20;
+    }
+
+    const heuristicQualityScore = Math.min(100, Math.max(0, heuristicScore));
+    score = heuristicQualityScore;
 
     const barAge = (candles.length - 1) - baseStartIdx;
     const isDepleted = testedCount >= 2;
@@ -411,7 +440,8 @@ export function detectSupplyDemandZones(
       trendConfluence,
       confluenceTags,
       vwapConfluence: vwapConfluence.scoreBonus > 0 ? vwapConfluence : undefined,
-      winProbabilityEstimate,
+      vwapAtFormation,
+      heuristicQualityScore,
       barAge,
       distanceInAtr,
       proximityPhase,

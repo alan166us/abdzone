@@ -51,7 +51,8 @@ export interface SupplyDemandZone {
   conservativeEntry?: number; // 50% zone equilibrium level for enhanced 4:1+ R:R
   confluenceTags?: string[]; // e.g. ['Pro-Trend 20/50 EMA', 'Fresh 0-Test', 'Wholesale Volume Imbalance']
   vwapConfluence?: { scoreBonus: number; tag: string };
-  winProbabilityEstimate?: number; // Statistical win rate probability estimate (e.g. 78%)
+  vwapAtFormation?: number; // Active session VWAP stamped at base formation
+  heuristicQualityScore?: number; // Transparent 0-100 quality score
   barAge?: number;        // Age in candles since zone formation
   proximityPhase?: ProximityPhase;
   distanceInAtr?: number;
@@ -93,7 +94,8 @@ export interface TradeRecommendation {
   rewardPerUnit3: number;
   riskRewardRatio: number;
   status: 'active' | 'triggered' | 'won' | 'stopped_out' | 'invalidated';
-  qualityScore: number;
+  heuristicQualityScore: number; // Transparent 0-100 quality score (Freshness + Velocity + Volume + VWAP)
+  qualityScore: number; // Kept for interface backward compatibility
   rationale: string;
   currentDistancePercent: number;
   distanceInAtr?: number;

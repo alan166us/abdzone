@@ -746,8 +746,8 @@ export const OpportunityMonitor: React.FC<OpportunityMonitorProps> = ({
                     <td className="py-3.5 px-4 text-center">
                       <div className="text-slate-200 font-bold">{opp.qualityScore}%</div>
                       <div className="text-[10px]">
-                        {opp.nearestZone?.winProbabilityEstimate ? (
-                          <span className="text-emerald-400 font-semibold">{opp.nearestZone.winProbabilityEstimate}% Edge</span>
+                        {opp.nearestZone?.heuristicQualityScore ? (
+                          <span className="text-emerald-400 font-semibold">{opp.nearestZone.heuristicQualityScore}/100 Quality</span>
                         ) : opp.wholesalerVolumeRatio && opp.wholesalerVolumeRatio >= 1.5 ? (
                           <span className="text-emerald-400 font-semibold">⚡{opp.wholesalerVolumeRatio.toFixed(1)}x Vol</span>
                         ) : (

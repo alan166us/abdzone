@@ -79,14 +79,17 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
     ticker.toUpperCase().includes('GC')
   );
 
-  const [viewMode, setViewMode] = useState<'options' | 'shares'>(() => isFutures ? 'shares' : 'options');
+  const cleanTicker = ticker.replace(/^(SCHWAB:|EXCHANGE:)/, '').trim().toUpperCase();
+  const actualTicker = isFutures ? (cleanTicker.startsWith('/') ? cleanTicker : `/${cleanTicker}`) : cleanTicker;
+
+  const [viewMode, setViewMode] = useState<'options' | 'shares'>('options');
+  const [cardModeMap, setCardModeMap] = useState<Record<string, 'options' | 'shares'>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   React.useEffect(() => {
-    if (isFutures) {
-      setViewMode('shares');
-    }
-  }, [isFutures, ticker]);
+    // Reset individual card overrides on ticker change so active viewMode applies uniformly
+    setCardModeMap({});
+  }, [ticker]);
 
   // Dynamic R:R Calculator State (custom adjustments per trade recommendation)
   const [customParamsMap, setCustomParamsMap] = useState<Record<string, CustomTradeParams>>({});
@@ -300,7 +303,10 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
       <div className="flex items-center justify-between p-1 bg-slate-900 border border-slate-800 rounded-lg text-xs font-mono">
         <button
           type="button"
-          onClick={() => setViewMode('options')}
+          onClick={() => {
+            setViewMode('options');
+            setCardModeMap({});
+          }}
           className={`flex-1 py-1.5 px-2 rounded transition-colors flex items-center justify-center gap-1.5 font-semibold ${
             viewMode === 'options'
               ? 'bg-sky-600 text-white shadow-sm'
@@ -308,24 +314,28 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
           }`}
         >
           <Building2 className="w-3.5 h-3.5" />
-          <span>{isFutures ? 'Futures Options Assist (/MES x5)' : 'Equity Options Assist (x100)'}</span>
+          <span>{isFutures ? 'Futures Option (/MS x5)' : 'Equity Options Assist (x100)'}</span>
         </button>
         <button
           type="button"
-          onClick={() => setViewMode('shares')}
+          onClick={() => {
+            setViewMode('shares');
+            setCardModeMap({});
+          }}
           className={`flex-1 py-1.5 px-2 rounded transition-colors flex items-center justify-center gap-1.5 font-medium ${
             viewMode === 'shares'
               ? 'bg-slate-800 text-white shadow-sm'
               : 'text-slate-400 hover:text-slate-200'
           }`}
         >
-          <span>{isFutures ? 'Futures /MES Contract Plan' : 'Stock Shares Plan'}</span>
+          <span>{isFutures ? `Outright ${actualTicker} Contract Plan` : 'Stock Shares Plan'}</span>
         </button>
       </div>
 
       {recommendations.map((rec) => {
         const isLong = rec.side === 'long';
         const isSelected = selectedRecommendation?.id === rec.id;
+        const activeMode = cardModeMap[rec.id] || viewMode;
         const params = getTradeParams(rec);
         const metrics = computeMetrics(rec, params);
         const isExpanded = !!expandedCalcMap[rec.id];
@@ -408,7 +418,7 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
             }`}
           >
             {/* Header: Side & Zone Pattern */}
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
               <div className="flex items-center gap-2">
                 <span
                   className={`flex items-center gap-1 font-display font-bold text-xs uppercase tracking-wide ${
@@ -416,7 +426,7 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                   }`}
                 >
                   {isLong ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
-                  {viewMode === 'options' 
+                  {activeMode === 'options' 
                     ? `BUY ${optionPlay.optionType}`
                     : (isLong ? 'BUY LIMIT' : 'SELL LIMIT')} · {rec.pattern}
                 </span>
@@ -426,8 +436,75 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
               </div>
 
               <div className="flex items-center gap-2 text-[11px] font-mono text-slate-400">
+                {/* Outright vs Option Toggle Button on Top Right of Card */}
+                {isFutures ? (
+                  <div className="flex items-center p-0.5 bg-slate-950/90 rounded border border-slate-700/80 font-mono text-[10px]">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCardModeMap((prev) => ({ ...prev, [rec.id]: 'shares' }));
+                      }}
+                      className={`px-2 py-0.5 rounded transition-colors ${
+                        activeMode === 'shares'
+                          ? 'bg-slate-700 text-white font-bold shadow-xs'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                      title={`Outright ${actualTicker} contract`}
+                    >
+                      Outright {actualTicker}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCardModeMap((prev) => ({ ...prev, [rec.id]: 'options' }));
+                      }}
+                      className={`px-2 py-0.5 rounded transition-colors ${
+                        activeMode === 'options'
+                          ? 'bg-sky-600 text-white font-bold shadow-xs'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                      title="CME Futures Option (/MS)"
+                    >
+                      Futures Option (/MS)
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center p-0.5 bg-slate-950/90 rounded border border-slate-700/80 font-mono text-[10px]">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCardModeMap((prev) => ({ ...prev, [rec.id]: 'shares' }));
+                      }}
+                      className={`px-2 py-0.5 rounded transition-colors ${
+                        activeMode === 'shares'
+                          ? 'bg-slate-700 text-white font-bold shadow-xs'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      Stock Shares
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCardModeMap((prev) => ({ ...prev, [rec.id]: 'options' }));
+                      }}
+                      className={`px-2 py-0.5 rounded transition-colors ${
+                        activeMode === 'options'
+                          ? 'bg-sky-600 text-white font-bold shadow-xs'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      Options (x100)
+                    </button>
+                  </div>
+                )}
+
                 <span className={`px-2 py-0.5 rounded font-bold border ${metrics.quality.badge}`}>
-                  R:R 1:{viewMode === 'options' ? optionMetrics.optionRR.toFixed(1) : metrics.rrRatio.toFixed(1)}
+                  R:R 1:{activeMode === 'options' ? optionMetrics.optionRR.toFixed(1) : metrics.rrRatio.toFixed(1)}
                 </span>
                 <span className="text-slate-600">·</span>
                 <span className="text-emerald-400 font-semibold">{rec.qualityScore}% Score</span>
@@ -627,7 +704,7 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
               </div>
             )}
 
-            {viewMode === 'options' ? (
+            {activeMode === 'options' ? (
               /* SCHWAB OPTIONS ASSIST VIEW */
               <div className="space-y-2.5">
                 {/* Model Estimate Transparency Warning Banner */}
@@ -1023,7 +1100,7 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className={`px-2 py-0.5 rounded font-bold text-[11px] border ${metrics.quality.badge}`}>
-                    1 : {viewMode === 'options' ? optionMetrics.optionRR.toFixed(2) : metrics.rrRatio.toFixed(2)} R:R
+                    1 : {activeMode === 'options' ? optionMetrics.optionRR.toFixed(2) : metrics.rrRatio.toFixed(2)} R:R
                   </span>
                   <span className="text-slate-400 text-[11px]">
                     BE Win Rate: <span className="text-slate-200 font-bold">{metrics.beWinRate.toFixed(1)}%</span>
@@ -1278,10 +1355,10 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                     <div className="p-2 rounded bg-slate-950 border border-slate-800/90">
                       <div className="text-[10px] text-slate-400">Position Size:</div>
                       <div className="text-slate-100 font-bold text-xs mt-0.5">
-                        {viewMode === 'options' ? `${optionMetrics.contracts} Option Contracts` : isFuturesContract ? `${metrics.shares} Contracts` : `${metrics.shares} Shares`}
+                        {activeMode === 'options' ? `${optionMetrics.contracts} Option Contracts` : isFuturesContract ? `${metrics.shares} Contracts` : `${metrics.shares} Shares`}
                       </div>
                       <div className="text-[9px] text-slate-500 mt-0.5">
-                        {viewMode === 'options' ? `Total Cost: $${optionMetrics.totalOptionCost.toLocaleString()}` : isFuturesContract ? `Margin Req: ~$${metrics.capitalRequired.toLocaleString()}` : `Capital: $${metrics.capitalRequired.toLocaleString()}`}
+                        {activeMode === 'options' ? `Total Cost: $${optionMetrics.totalOptionCost.toLocaleString()}` : isFuturesContract ? `Margin Req: ~$${metrics.capitalRequired.toLocaleString()}` : `Capital: $${metrics.capitalRequired.toLocaleString()}`}
                       </div>
                     </div>
 
@@ -1298,20 +1375,20 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                     <div className="p-2 rounded bg-rose-950/30 border border-rose-900/40">
                       <div className="text-[10px] text-rose-400 font-semibold">Total Max Risk:</div>
                       <div className="text-rose-300 font-bold text-xs mt-0.5">
-                        -${viewMode === 'options' ? optionMetrics.totalOptionRisk.toFixed(2) : metrics.totalRiskDollars.toFixed(2)}
+                        -${activeMode === 'options' ? optionMetrics.totalOptionRisk.toFixed(2) : metrics.totalRiskDollars.toFixed(2)}
                       </div>
                       <div className="text-[9px] text-rose-400/70 mt-0.5">
-                        {viewMode === 'options' ? `-$${optionMetrics.riskPerContract.toFixed(0)}/contract` : isFuturesContract ? `-$${(metrics.totalRiskDollars / Math.max(1, metrics.shares)).toFixed(2)}/contract` : `-$${metrics.risk.toFixed(2)}/share`}
+                        {activeMode === 'options' ? `-$${optionMetrics.riskPerContract.toFixed(0)}/contract` : isFuturesContract ? `-$${(metrics.totalRiskDollars / Math.max(1, metrics.shares)).toFixed(2)}/contract` : `-$${metrics.risk.toFixed(2)}/share`}
                       </div>
                     </div>
 
                     <div className="p-2 rounded bg-emerald-950/30 border border-emerald-900/40">
                       <div className="text-[10px] text-emerald-400 font-semibold">Total Potential Gain:</div>
                       <div className="text-emerald-300 font-bold text-xs mt-0.5">
-                        +${viewMode === 'options' ? optionMetrics.totalOptionReward.toFixed(2) : metrics.totalRewardDollars.toFixed(2)}
+                        +${activeMode === 'options' ? optionMetrics.totalOptionReward.toFixed(2) : metrics.totalRewardDollars.toFixed(2)}
                       </div>
                       <div className="text-[9px] text-emerald-400/70 mt-0.5">
-                        {viewMode === 'options' ? `+$${optionMetrics.rewardPerContract.toFixed(0)}/contract` : isFuturesContract ? `+$${(metrics.totalRewardDollars / Math.max(1, metrics.shares)).toFixed(2)}/contract` : `+$${metrics.reward.toFixed(2)}/share`}
+                        {activeMode === 'options' ? `+$${optionMetrics.rewardPerContract.toFixed(0)}/contract` : isFuturesContract ? `+$${(metrics.totalRewardDollars / Math.max(1, metrics.shares)).toFixed(2)}/contract` : `+$${metrics.reward.toFixed(2)}/share`}
                       </div>
                     </div>
                   </div>
@@ -1323,7 +1400,7 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
             <div className="flex items-center justify-between pt-2.5 mt-2 border-t border-slate-800/70 gap-2">
               <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono truncate">
                 <span>
-                  {viewMode === 'options'
+                  {activeMode === 'options'
                     ? 'Targeting TP on underlying zone'
                     : isFuturesContract
                     ? `Margin Req: ~$${metrics.capitalRequired.toLocaleString()}`

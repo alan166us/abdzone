@@ -3,6 +3,48 @@ import { getContractPointValue } from './contractSpecs';
 
 export { getContractPointValue };
 
+/**
+ * Transparent Heuristic Quality Score (bounded strictly 0–100):
+ * - Freshness: 0 tests = +30, 1 test = +15, >=2 tests = 0
+ * - Departure Velocity: ERC >= 1.5x ATR = +25
+ * - Volume Ratio: Wholesale Imbalance >= 1.5x = +25
+ * - VWAP Band Confluence at formation: At or beyond 1-sigma / 2-sigma = +20
+ */
+export function calculateHeuristicQualityScore(
+  zone: SupplyDemandZone,
+  volatilityMetrics?: VolatilityMetrics
+): number {
+  let score = 0;
+
+  // 1. Freshness (0 tests = +30, 1 test = +15, >=2 tests = 0)
+  if (zone.testedCount === 0) {
+    score += 30;
+  } else if (zone.testedCount === 1) {
+    score += 15;
+  }
+
+  // 2. Departure Velocity (ERC >= 1.5x ATR = +25)
+  if (zone.departureVelocity >= 1.5) {
+    score += 25;
+  }
+
+  // 3. Volume Ratio (Wholesale Imbalance >= 1.5x = +25)
+  if (zone.volumeImbalanceRatio !== undefined && zone.volumeImbalanceRatio >= 1.5) {
+    score += 25;
+  }
+
+  // 4. VWAP Band Confluence at formation (At or beyond 1-sigma / 2-sigma = +20)
+  const hasVwapConfluence = Boolean(
+    (zone.vwapConfluence && zone.vwapConfluence.scoreBonus > 0) ||
+    (zone.confluenceTags && zone.confluenceTags.some(t => t.includes('VWAP') || t.includes('σ')))
+  );
+  if (hasVwapConfluence) {
+    score += 20;
+  }
+
+  return Math.min(100, Math.max(0, score));
+}
+
 export function generateTradeRecommendations(
   currentPrice: number,
   zones: SupplyDemandZone[],
@@ -14,32 +56,51 @@ export function generateTradeRecommendations(
   const bufferMultiplier = volatilityMetrics.recommendedBufferMultiplier || 1.30;
   const bufferAmount = atr * bufferMultiplier;
 
-  // Filter active, high-edge unmitigated zones (prioritizing fresh zones with quality score >= 55)
+  // Directional Pullback Filter:
+  // - Demand (Long): Discard if spot price is already below zone.low - (0.2 * ATR)
+  // - Supply (Short): Discard if spot price is already above zone.high + (0.2 * ATR)
   const activeDemandZones = zones
-    .filter(z => z.type === 'demand' && !z.isMitigated && z.testedCount <= 2 && z.high <= currentPrice * 1.06)
+    .filter(z => 
+      z.type === 'demand' && 
+      !z.isMitigated && 
+      z.testedCount <= 2 && 
+      !(currentPrice < z.low - 0.2 * atr) &&
+      z.high <= currentPrice * 1.06
+    )
     .sort((a, b) => {
       // Prioritize proximity, then freshness, then quality score
       const distA = Math.abs(currentPrice - a.high);
       const distB = Math.abs(currentPrice - b.high);
       if (Math.abs(distA - distB) / currentPrice < 0.01) {
-        return (b.strengthScore || 50) - (a.strengthScore || 50);
+        return (b.heuristicQualityScore ?? b.strengthScore ?? 50) - (a.heuristicQualityScore ?? a.strengthScore ?? 50);
       }
       return distA - distB;
     });
 
   const activeSupplyZones = zones
-    .filter(z => z.type === 'supply' && !z.isMitigated && z.testedCount <= 2 && z.low >= currentPrice * 0.94)
+    .filter(z => 
+      z.type === 'supply' && 
+      !z.isMitigated && 
+      z.testedCount <= 2 && 
+      !(currentPrice > z.high + 0.2 * atr) &&
+      z.low >= currentPrice * 0.94
+    )
     .sort((a, b) => {
       const distA = Math.abs(a.low - currentPrice);
       const distB = Math.abs(b.low - currentPrice);
       if (Math.abs(distA - distB) / currentPrice < 0.01) {
-        return (b.strengthScore || 50) - (a.strengthScore || 50);
+        return (b.heuristicQualityScore ?? b.strengthScore ?? 50) - (a.heuristicQualityScore ?? a.strengthScore ?? 50);
       }
       return distA - distB;
     });
 
   // 1. Long Recommendations for top Demand Zones
   for (const zone of activeDemandZones.slice(0, 3)) {
+    // Directional Pullback Guard: Discard if price already breached distal line - 0.2 ATR
+    if (currentPrice < zone.low - 0.2 * atr) {
+      continue;
+    }
+
     const entry = zone.proximalLine || zone.high; // Aggressive Limit order at Proximal Line
     const conservativeEntry = zone.conservativeEntry || zone.equilibrium; // Conservative 50% Equilibrium Entry
     const stopLoss = Math.max(0.0001, (zone.distalLine || zone.low) - bufferAmount); // Hard SL = Distal - 1.35x ATR
@@ -55,7 +116,7 @@ export function generateTradeRecommendations(
 
     const distancePercent = ((currentPrice - entry) / currentPrice) * 100;
     const tags = zone.confluenceTags && zone.confluenceTags.length > 0 ? zone.confluenceTags.join(' · ') : 'Standard Imbalance';
-    const winRateEst = zone.winProbabilityEstimate || 74;
+    const heuristicQualityScore = calculateHeuristicQualityScore(zone, volatilityMetrics);
 
     recommendations.push({
       id: `rec-long-${zone.id}`,
@@ -79,7 +140,8 @@ export function generateTradeRecommendations(
       rewardPerUnit3: tp3 - entry,
       riskRewardRatio: Number(((tp2 - entry) / riskPerUnit).toFixed(1)),
       status: 'active',
-      qualityScore: zone.strengthScore,
+      heuristicQualityScore,
+      qualityScore: heuristicQualityScore,
       proximityPhase: zone.proximityPhase || 'Dormant (>1.5x ATR)',
       distanceInAtr: zone.distanceInAtr,
       opposingZoneId: overheadSupply?.id,
@@ -91,6 +153,11 @@ export function generateTradeRecommendations(
 
   // 2. Short Recommendations for top Supply Zones
   for (const zone of activeSupplyZones.slice(0, 3)) {
+    // Directional Pullback Guard: Discard if price already breached distal line + 0.2 ATR
+    if (currentPrice > zone.high + 0.2 * atr) {
+      continue;
+    }
+
     const entry = zone.proximalLine || zone.low; // Aggressive Limit order at Proximal Line
     const conservativeEntry = zone.conservativeEntry || zone.equilibrium; // Conservative 50% Equilibrium Entry
     const stopLoss = (zone.distalLine || zone.high) + bufferAmount; // Hard SL = Distal + 1.35x ATR
@@ -106,7 +173,7 @@ export function generateTradeRecommendations(
 
     const distancePercent = ((entry - currentPrice) / currentPrice) * 100;
     const tags = zone.confluenceTags && zone.confluenceTags.length > 0 ? zone.confluenceTags.join(' · ') : 'Standard Imbalance';
-    const winRateEst = zone.winProbabilityEstimate || 74;
+    const heuristicQualityScore = calculateHeuristicQualityScore(zone, volatilityMetrics);
 
     recommendations.push({
       id: `rec-short-${zone.id}`,
@@ -130,7 +197,8 @@ export function generateTradeRecommendations(
       rewardPerUnit3: entry - tp3,
       riskRewardRatio: Number(((entry - tp2) / riskPerUnit).toFixed(1)),
       status: 'active',
-      qualityScore: zone.strengthScore,
+      heuristicQualityScore,
+      qualityScore: heuristicQualityScore,
       proximityPhase: zone.proximityPhase || 'Dormant (>1.5x ATR)',
       distanceInAtr: zone.distanceInAtr,
       opposingZoneId: lowerDemand?.id,
