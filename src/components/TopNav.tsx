@@ -489,7 +489,7 @@ export const TopNav: React.FC<TopNavProps> = ({
                     </div>
                     <div>
                       <div className="text-xs font-semibold text-white group-hover:text-emerald-300">Import CSV Candles</div>
-                      <div className="text-[10px] text-slate-400">thinkorswim exports, Yahoo, Binance</div>
+                      <div className="text-[10px] text-slate-400">thinkorswim & Schwab exports, Binance</div>
                     </div>
                   </div>
                   <span className="text-[10px] font-mono text-emerald-400 group-hover:translate-x-0.5 transition-transform">Import &rarr;</span>

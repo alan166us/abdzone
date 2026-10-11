@@ -1,4 +1,7 @@
 import { TradeRecommendation, VolatilityMetrics } from '../types/trading';
+import { getContractPointValue } from './tradeEngine';
+
+export { getContractPointValue };
 
 export type ExpirationStyle = 'weekly' | 'swing' | 'monthly';
 export type StrikeBias = 'ITM' | 'ATM' | 'OTM';
@@ -6,6 +9,8 @@ export type InstrumentType = 'EQUITY_OPTION' | 'FUTURES_OPTION';
 
 export interface SchwabOptionContractRecommendation {
   id: string;
+  isModelEstimate: true; // Explicit flag indicating mathematical model price estimate
+  estimatedModelLabel: string; // 'Estimated Premium (Black-Scholes/HV Approximation)'
   side: 'long' | 'short';
   optionType: 'CALL' | 'PUT';
   instrumentType: InstrumentType;
@@ -108,14 +113,56 @@ export interface SchwabOptionContractRecommendation {
 }
 
 /**
- * Calculates optimal option strike rounding based on underlying share price
- * e.g. SPY/QQQ: $1 strikes; NVDA/TSLA: $2.5 or $5 strikes; AAPL: $2.5 strikes
+ * Calculates optimal option strike rounding based on underlying share price and ticker specifications
+ * e.g. /MES, /ES: 5-point CME strikes; /MNQ, /NQ: 25-point CME strikes; SPY/QQQ: $1 strikes; NVDA: $2.5 strikes
  */
-function getStrikeIncrement(price: number): number {
+export function getStrikeIncrement(price: number, ticker?: string): number {
+  const clean = (ticker || '').toUpperCase().replace('/', '');
+  if (clean === 'MES' || clean.startsWith('MES') || clean === 'ES' || clean.startsWith('ES')) {
+    return 5.0; // 5-point standard CME listed strike interval
+  }
+  if (clean === 'MNQ' || clean.startsWith('MNQ') || clean === 'NQ' || clean.startsWith('NQ')) {
+    return 25.0; // 25-point standard CME listed strike interval
+  }
+  if (clean === 'RTY' || clean.startsWith('RTY')) return 10.0;
+  if (clean === 'CL' || clean.startsWith('CL')) return 0.5;
+  if (clean === 'GC' || clean.startsWith('GC')) return 10.0;
   if (price > 400) return 1.0; // SPY, QQQ have $1 strikes
   if (price > 100) return 2.5;
   if (price > 50) return 1.0;
   return 0.5;
+}
+
+/**
+ * CME & OCC Futures Options Symbol Validator
+ * Validates symbols and ensures CME futures options strikes snap to listed increments
+ * (e.g. 5-point intervals for /MES like 5800, 5805) without non-tradable fractional numbers.
+ */
+export function validateTosSymbol(symbol: string, strike?: number): { valid: boolean; reason?: string } {
+  if (!symbol || !symbol.trim()) {
+    return { valid: false, reason: 'Symbol cannot be empty.' };
+  }
+  const clean = symbol.trim().toUpperCase();
+  const isFutures = clean.startsWith('/') || clean.includes('MES') || clean.includes('ES') || clean.includes('NQ') || clean.includes('MNQ') || clean.includes('CL') || clean.includes('GC') || clean.includes('RTY');
+
+  if (isFutures && strike !== undefined) {
+    if (!Number.isFinite(strike) || strike <= 0) {
+      return { valid: false, reason: `Invalid strike price: ${strike}` };
+    }
+    if (clean.includes('MES') || clean.includes('ES')) {
+      if (strike % 5 !== 0 || !Number.isInteger(strike)) {
+        return { valid: false, reason: `CME /MES & /ES strikes must snap to 5-point increments (e.g. 5800, 5805). Strike received: ${strike}` };
+      }
+    } else if (clean.includes('MNQ') || clean.includes('NQ')) {
+      if (strike % 25 !== 0 || !Number.isInteger(strike)) {
+        return { valid: false, reason: `CME /MNQ & /NQ strikes must snap to 25-point increments. Strike received: ${strike}` };
+      }
+    } else if (!Number.isInteger(strike * 10)) {
+      return { valid: false, reason: `Futures strike has non-tradable fractional precision: ${strike}` };
+    }
+  }
+
+  return { valid: true };
 }
 
 /**
@@ -169,29 +216,6 @@ function getExpirationDetails(style: ExpirationStyle = 'swing'): {
 }
 
 /**
- * Calculates contract multiplier / point value.
- * For /MES (Micro E-mini S&P): $5.00/point ($1.25/tick)
- * For /MNQ (Micro E-mini Nasdaq): $2.00/point ($0.50/tick)
- * For /ES (E-mini S&P): $50.00/point ($12.50/tick)
- * For /NQ (E-mini Nasdaq): $20.00/point ($5.00/tick)
- * For /RTY (Russell 2000): $50.00/point ($5.00/tick)
- * For /CL (Crude Oil): $1000.00/point ($10.00/cent)
- * For /GC (Gold): $100.00/point ($10.00/0.10)
- * Standard equity options deliverable: 100 shares per contract
- */
-export function getContractPointValue(ticker: string): number {
-  const clean = ticker.trim().toUpperCase();
-  if (clean.startsWith('/') || clean === 'MES' || clean.includes('MES')) return 5.0; // $5.00/point ($1.25/tick) for /MES and futures options
-  if (clean.includes('MNQ')) return 2.0; // $2.00/point ($0.50/tick)
-  if (clean.includes('/ES') || clean === 'ES') return 50.0; // $50.00/point ($12.50/tick)
-  if (clean.includes('/NQ') || clean === 'NQ') return 20.0; // $20.00/point ($5.00/tick)
-  if (clean.includes('/RTY') || clean === 'RTY') return 50.0; // $50.00/point
-  if (clean.includes('/CL') || clean === 'CL') return 1000.0; // $1,000.00/point
-  if (clean.includes('/GC') || clean === 'GC') return 100.0; // $100.00/point
-  return 100.0; // 100 shares per equity contract
-}
-
-/**
  * Constructs standard OCC Option Symbol (e.g. SPY   251017C00575000)
  * or CME Futures Option Symbol for /MES (e.g. /MS261023C5800)
  */
@@ -239,11 +263,16 @@ export function generateSchwabOptionPlay(
   const rawTicker = ticker || rec.symbol || 'SPY';
   const cleanTicker = rawTicker.replace(/^(SCHWAB:|EXCHANGE:)/, '').trim().toUpperCase();
   const underlying = rec.entry;
-  const increment = getStrikeIncrement(underlying);
+  const increment = getStrikeIncrement(underlying, cleanTicker);
 
   // Expiration calculation
   const expDetails = getExpirationDetails(expirationStyle);
   const { expIso, expDisplay, tosStr, daysToExpiration } = expDetails;
+
+  const isFutures = cleanTicker.startsWith('/') || cleanTicker === 'MES' || cleanTicker.includes('MES') || cleanTicker.includes('MNQ') || cleanTicker.includes('ES') || cleanTicker.includes('NQ') || cleanTicker.includes('RTY') || cleanTicker.includes('CL') || cleanTicker.includes('GC');
+  const instrumentType: InstrumentType = isFutures ? 'FUTURES_OPTION' : 'EQUITY_OPTION';
+  const actualTicker = isFutures ? (cleanTicker.startsWith('/') ? cleanTicker : `/${cleanTicker}`) : cleanTicker;
+  const pointMultiplier = getContractPointValue(actualTicker);
 
   // Strike Selection based on bias (ITM / ATM / OTM)
   const atmStrike = Math.round(underlying / increment) * increment;
@@ -274,6 +303,15 @@ export function generateSchwabOptionPlay(
     }
   }
 
+  // Snap strike to listed increments and ensure integer for futures options
+  strike = Number((Math.round(strike / increment) * increment).toFixed(2));
+  if (isFutures) {
+    strike = Math.round(strike);
+  }
+
+  // Symbol and Strike Validation
+  validateTosSymbol(actualTicker, strike);
+
   // Model option premium and Greeks dynamically
   const hv = volatilityMetrics.annualizedHV ? volatilityMetrics.annualizedHV / 100 : 0.26;
   const dteFactor = Math.sqrt(daysToExpiration / 365);
@@ -295,10 +333,6 @@ export function generateSchwabOptionPlay(
   const rawEntry = intrinsicValue + timeValue;
   const entryPremium = Number(Math.max(0.85, Math.min(rawEntry, underlying * 0.12)).toFixed(2));
   
-  const isFutures = cleanTicker.startsWith('/') || cleanTicker === 'MES' || cleanTicker.includes('MES');
-  const instrumentType: InstrumentType = isFutures ? 'FUTURES_OPTION' : 'EQUITY_OPTION';
-  const actualTicker = isFutures ? (cleanTicker.startsWith('/') ? cleanTicker : `/${cleanTicker}`) : cleanTicker;
-  const pointMultiplier = isFutures ? 5.0 : 100.0;
   const costPerContract = Math.round(entryPremium * pointMultiplier);
 
   // Projected stock moves from zone geometry
@@ -463,6 +497,8 @@ export function generateSchwabOptionPlay(
 
   return {
     id: `opt-${rec.id}-${expirationStyle}-${strikeBias}`,
+    isModelEstimate: true,
+    estimatedModelLabel: 'Estimated Premium (Black-Scholes/HV Approximation)',
     side: rec.side,
     optionType: optionTypeStr,
     instrumentType,
@@ -611,19 +647,28 @@ export function formatTosCompoundOptionBracketCommand(
   qty: number = 1
 ): string {
   const cleanTicker = ticker.trim().toUpperCase();
-  const isFutures = cleanTicker.startsWith('/') || cleanTicker === 'MES' || cleanTicker.includes('MES');
+  const isFutures = cleanTicker.startsWith('/') || cleanTicker.includes('MES') || cleanTicker.includes('ES') || cleanTicker.includes('NQ') || cleanTicker.includes('MNQ');
   const actualSym = isFutures ? (cleanTicker.startsWith('/') ? cleanTicker : `/${cleanTicker}`) : cleanTicker.replace('/', '');
   const signQty = qty >= 0 ? `+${qty}` : `${qty}`;
   const exitSignQty = qty > 0 ? `-${qty}` : `${qty}`;
 
+  // Validate and sanitize strike to prevent non-tradable fractional numbers
+  const valResult = validateTosSymbol(actualSym, strike);
+  let tradableStrike = strike;
+  if (!valResult.valid && (actualSym.includes('MES') || actualSym.includes('ES'))) {
+    tradableStrike = Math.round(strike / 5) * 5;
+  } else if (!valResult.valid && (actualSym.includes('MNQ') || actualSym.includes('NQ'))) {
+    tradableStrike = Math.round(strike / 25) * 25;
+  }
+
   if (isFutures) {
     // CME Futures Options Bracket (no '100' share deliverable)
-    const symbolStr = `${actualSym} ${tosExpirationStr} ${strike} ${optionType}`;
+    const symbolStr = `${actualSym} ${tosExpirationStr} ${tradableStrike} ${optionType}`;
     return `BUY ${signQty} ${symbolStr} @${entryPremium.toFixed(2)} LMT [1st Triggers OCO: SELL ${exitSignQty} ${symbolStr} @${targetPremium.toFixed(2)} LMT, SELL ${exitSignQty} ${symbolStr} @${stopPremium.toFixed(2)} STP]`;
   }
 
   // Equity Options Bracket (standard 100 multiplier and single option format)
-  const symbolStr = `SINGLE ${cleanTicker} 100 ${tosExpirationStr} ${strike} ${optionType}`;
+  const symbolStr = `SINGLE ${cleanTicker} 100 ${tosExpirationStr} ${tradableStrike} ${optionType}`;
   return `BUY ${signQty} ${symbolStr} @${entryPremium.toFixed(2)} LMT [1st Triggers OCO: SELL ${exitSignQty} ${symbolStr} @${targetPremium.toFixed(2)} LMT, SELL ${exitSignQty} ${symbolStr} @${stopPremium.toFixed(2)} STP]`;
 }
 
@@ -688,63 +733,6 @@ export function generateTosFullOrderSetSummary(
   quantity: number = 2
 ): string {
   const safeQty = Math.max(1, Math.round(quantity));
-  
-  if (safeQty < 2) {
-    // Single contract: Route full 1 contract to TP2
-    const entryLine = formatTosNaturalOptionCommand(
-      optionPlay.ticker,
-      optionPlay.tosExpirationStr,
-      optionPlay.strike,
-      optionPlay.optionType,
-      optionPlay.entry.premium,
-      1
-    );
-    const compoundString = formatTosCompoundOptionBracketCommand(
-      optionPlay.ticker,
-      optionPlay.tosExpirationStr,
-      optionPlay.strike,
-      optionPlay.optionType,
-      optionPlay.entry.premium,
-      optionPlay.stopLoss.premium,
-      optionPlay.target.tp2.premium,
-      1
-    );
-    const tpLine = formatTosNaturalOptionExitCommand(
-      optionPlay.ticker,
-      optionPlay.tosExpirationStr,
-      optionPlay.strike,
-      optionPlay.optionType,
-      optionPlay.target.tp2.premium,
-      'LMT',
-      1
-    );
-    const slLine = formatTosNaturalOptionExitCommand(
-      optionPlay.ticker,
-      optionPlay.tosExpirationStr,
-      optionPlay.strike,
-      optionPlay.optionType,
-      optionPlay.stopLoss.premium,
-      'STP',
-      1
-    );
-
-    return [
-      `=== THINKORSWIM 1ST TRIGGERS OCO ORDER SET (1 CONTRACT) ===`,
-      `[COMPOUND STRING]:  ${compoundString}`,
-      `-------------------------------------------------------------`,
-      `[ROW 1 - ENTRY]:   ${entryLine}`,
-      `[ROW 2 - TP LMT]:  ${tpLine}`,
-      `[ROW 3 - SL STP]:  ${slLine}  <-- (Order type MUST be STP)`,
-      `=============================================================`,
-      `HOW TO EXECUTE IN THINKORSWIM:`,
-      `1. Paste the [COMPOUND STRING] directly via clipboard icon (📋) in Order Entry Tools.`,
-      `2. Or paste ROW 1, set Advanced Order to '1st Triggers OCO', and verify Stop row is 'STP'.`,
-    ].join('\n');
-  }
-
-  // Multi-target tranches: Ensure q1 and q2 never evaluate to 0
-  const q1 = Math.max(1, Math.floor(safeQty / 2));
-  const q2 = Math.max(1, safeQty - q1);
   const entryLine = formatTosNaturalOptionCommand(
     optionPlay.ticker,
     optionPlay.tosExpirationStr,
@@ -764,6 +752,39 @@ export function generateTosFullOrderSetSummary(
     optionPlay.target.tp2.premium,
     safeQty
   );
+
+  if (quantity < 2) {
+    const tpLine = formatTosNaturalOptionExitCommand(
+      optionPlay.ticker,
+      optionPlay.tosExpirationStr,
+      optionPlay.strike,
+      optionPlay.optionType,
+      optionPlay.target.tp2.premium,
+      'LMT',
+      1
+    );
+    const slLine = formatTosNaturalOptionExitCommand(
+      optionPlay.ticker,
+      optionPlay.tosExpirationStr,
+      optionPlay.strike,
+      optionPlay.optionType,
+      optionPlay.stopLoss.premium,
+      'STP',
+      1
+    );
+    return [
+      `=== THINKORSWIM 1ST TRIGGERS OCO ORDER SET (1 CONTRACT) ===`,
+      `[COMPOUND STRING]:  ${compoundString}`,
+      `-------------------------------------------------------------`,
+      `[ROW 1 - ENTRY]:   ${entryLine}`,
+      `[ROW 2 - TP LMT]:  ${tpLine}`,
+      `[ROW 3 - SL STP]:  ${slLine}`,
+    ].join('\n');
+  }
+
+  // Multi-target tranches: Ensure q1 and q2 never evaluate to 0
+  const q1 = Math.max(1, Math.floor(safeQty / 2));
+  const q2 = Math.max(1, safeQty - q1);
 
   const tp1Line = formatTosNaturalOptionExitCommand(
     optionPlay.ticker,

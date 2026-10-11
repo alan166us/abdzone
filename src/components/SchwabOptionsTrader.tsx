@@ -175,6 +175,19 @@ export const SchwabOptionsTrader: React.FC<SchwabOptionsTraderProps> = ({
       </div>
 
       <div className="p-4 md:p-6 space-y-5 max-w-7xl mx-auto w-full">
+        {/* Model Estimate Transparency Warning Banner */}
+        <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-600/70 flex items-start gap-3 text-xs text-amber-200">
+          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <div className="space-y-0.5">
+            <div className="font-semibold text-amber-300">
+              ⚠️ Option premiums and Greeks are mathematical model estimates based on historical volatility, not live quoted bid/ask. Always verify live marks on thinkorswim before routing.
+            </div>
+            <div className="text-[11px] text-amber-300/80">
+              Contract pricing and Greek projections are theoretical estimates derived from Black-Scholes formulas, historical volatility, and zone boundaries. Always verify live chain quotes in thinkorswim or Charles Schwab before placing live orders.
+            </div>
+          </div>
+        </div>
+
         {/* Active Trade Selector (if multiple setups exist) */}
         {recommendations.length > 1 && (
           <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs font-mono">
@@ -395,6 +408,9 @@ export const SchwabOptionsTrader: React.FC<SchwabOptionsTraderProps> = ({
                 <div className="text-3xl font-extrabold font-mono text-sky-300 tabular-nums">
                   ${optionPlay.entry.premium.toFixed(2)}
                 </div>
+                <div className="text-[10px] text-sky-400/90 font-mono mt-0.5">
+                  Estimated Premium (Black-Scholes/HV Approximation)
+                </div>
                 <div className="text-xs font-mono text-slate-400 mt-1 flex items-center justify-between">
                   <span>${optionPlay.entry.costPerContract.toLocaleString()} / contract</span>
                   <span className="text-sky-400 font-semibold">{contractQty}x = ${totalCost.toLocaleString()}</span>
@@ -442,6 +458,9 @@ export const SchwabOptionsTrader: React.FC<SchwabOptionsTraderProps> = ({
                 <div className="text-3xl font-extrabold font-mono text-rose-400 tabular-nums">
                   ${optionPlay.stopLoss.premium.toFixed(2)}
                 </div>
+                <div className="text-[10px] text-rose-400/90 font-mono mt-0.5">
+                  Estimated Premium (Black-Scholes/HV Approximation)
+                </div>
                 <div className="text-xs font-mono text-slate-400 mt-1 flex items-center justify-between">
                   <span className="text-rose-400/90">-${Math.abs(optionPlay.stopLoss.lossPerContract)} / contract</span>
                   <span className="text-rose-400 font-semibold">{contractQty}x = -${totalMaxLoss.toLocaleString()}</span>
@@ -488,6 +507,9 @@ export const SchwabOptionsTrader: React.FC<SchwabOptionsTraderProps> = ({
               <div className="my-2">
                 <div className="text-3xl font-extrabold font-mono text-emerald-400 tabular-nums">
                   ${optionPlay.target.premium.toFixed(2)}
+                </div>
+                <div className="text-[10px] text-emerald-400/90 font-mono mt-0.5">
+                  Estimated Premium (Black-Scholes/HV Approximation)
                 </div>
                 <div className="text-xs font-mono text-slate-400 mt-1 flex items-center justify-between">
                   <span className="text-emerald-400/90">+${optionPlay.target.profitPerContract} / contract</span>
@@ -784,6 +806,7 @@ export const SchwabOptionsTrader: React.FC<SchwabOptionsTraderProps> = ({
                     type="button"
                     onClick={() => handleCopy(formatTosNaturalOptionCommand(optionPlay.ticker, optionPlay.tosExpirationStr, optionPlay.strike, optionPlay.optionType, optionPlay.entry.premium, contractQty), 'tosNaturalOrder')}
                     className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold transition-colors shadow-sm cursor-pointer"
+                    title="Copies calculated theoretical bracket. Verify chain in TOS."
                   >
                     {copiedType === 'tosNaturalOrder' ? (
                       <>
@@ -802,7 +825,7 @@ export const SchwabOptionsTrader: React.FC<SchwabOptionsTraderProps> = ({
                     type="button"
                     onClick={() => handleCopy(generateTosFullOrderSetSummary(optionPlay, contractQty), 'tosFullSummary')}
                     className="flex items-center gap-1.5 px-3.5 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-semibold transition-colors shadow-sm cursor-pointer"
-                    title="Copy complete 5-row blueprint with all Entry, Stop, and Target legs"
+                    title="Copies calculated theoretical bracket. Verify chain in TOS."
                   >
                     {copiedType === 'tosFullSummary' ? (
                       <>

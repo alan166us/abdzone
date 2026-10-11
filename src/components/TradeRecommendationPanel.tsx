@@ -169,9 +169,9 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
     const isEsContract = !isMesContract && (cleanSym.includes('/ES') || cleanSym === 'ES');
     const isMnqContract = cleanSym.includes('MNQ');
     const isNqContract = !isMnqContract && (cleanSym.includes('/NQ') || cleanSym === 'NQ');
-    const isFuturesContract = isMesContract || isEsContract || isMnqContract || isNqContract || cleanSym.startsWith('/');
+    const isFuturesContract = isMesContract || isEsContract || isMnqContract || isNqContract || cleanSym.startsWith('/') || cleanSym.includes('RTY') || cleanSym.includes('CL') || cleanSym.includes('GC');
 
-    const pointValue = isMesContract ? 5.0 : isEsContract ? 50.0 : isMnqContract ? 2.0 : isNqContract ? 20.0 : 1.0;
+    const pointValue = isFuturesContract ? getContractPointValue(cleanSym) : 1.0;
     const commission = isFuturesContract ? 5.0 : 0.0; // round-turn commission
     const netRiskDollars = (risk * pointValue) + commission;
     const netRewardDollars = Math.max(0, (reward * pointValue) - commission);
@@ -247,16 +247,15 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
       targetPrem = Number((entryPrem + gain).toFixed(2));
     }
 
-    const cleanSym = (optionPlay.ticker || '').toUpperCase();
-    const isFuturesOpt = optionPlay.instrumentType === 'FUTURES_OPTION' || cleanSym.startsWith('/') || cleanSym === 'MES' || cleanSym.includes('MES');
-    const multiplier = isFuturesOpt ? 5.0 : (optionPlay.pointMultiplier || 100.0);
+    const cleanSym = (optionPlay.ticker || ticker || '').toUpperCase();
+    const multiplier = getContractPointValue(cleanSym);
     const riskPerContract = Math.max(1, (entryPrem - stopPrem) * multiplier);
     const rewardPerContract = Math.max(0, (targetPrem - entryPrem) * multiplier);
     const optionRR = riskPerContract > 0 ? rewardPerContract / riskPerContract : 0;
     const contracts = Math.max(1, Math.floor(params.riskBudget / riskPerContract));
     const totalOptionRisk = contracts * riskPerContract;
     const totalOptionReward = contracts * rewardPerContract;
-    // Calculate cost: (Premium * 5 * Contracts) for /MES and futures options, or (Premium * 100 * Contracts) for equities
+    // Calculate cost strictly via getContractPointValue: (Premium * Multiplier * Contracts)
     const totalOptionCost = Number((entryPrem * multiplier * contracts).toFixed(2));
 
     return {
@@ -631,6 +630,16 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
             {viewMode === 'options' ? (
               /* SCHWAB OPTIONS ASSIST VIEW */
               <div className="space-y-2.5">
+                {/* Model Estimate Transparency Warning Banner */}
+                <div className="p-2.5 rounded-lg bg-amber-950/40 border border-amber-600/70 flex items-start gap-2.5 text-xs text-amber-200">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <div className="font-semibold text-amber-300">
+                      ⚠️ Option premiums and Greeks are mathematical model estimates based on historical volatility, not live quoted bid/ask. Always verify live marks on thinkorswim before routing.
+                    </div>
+                  </div>
+                </div>
+
                 {/* Contract Badge */}
                 <div className="p-2.5 rounded bg-slate-950/80 border border-sky-900/60 flex flex-wrap items-center justify-between gap-2 font-mono">
                   <div className="flex flex-wrap items-center gap-2">
@@ -662,12 +671,15 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                 <div className="grid grid-cols-3 gap-2 p-3 bg-slate-950/80 rounded-lg border border-slate-800 font-mono text-xs">
                   {/* 1. ENTRY */}
                   <div className="p-2 rounded bg-slate-900/60 border border-sky-900/50">
-                    <div className="text-[10px] text-sky-400 font-bold uppercase tracking-wider mb-1 flex items-center gap-1">
-                      <Crosshair className="w-3 h-3" />
-                      <span>1. Entry</span>
+                    <div className="text-[10px] text-sky-400 font-bold uppercase tracking-wider mb-1 flex items-center justify-between">
+                      <span className="flex items-center gap-1"><Crosshair className="w-3 h-3" /> 1. Entry</span>
+                      <span className="text-[8px] text-amber-300/80 uppercase font-mono">Model Est.</span>
                     </div>
                     <div className="font-bold text-sky-300 text-sm tabular-nums">
                       ${optionPlay.entry.premium.toFixed(2)}
+                    </div>
+                    <div className="text-[8px] text-slate-400 mt-0.5 font-mono">
+                      Estimated Premium (Black-Scholes/HV Approximation)
                     </div>
                     <div className="text-[10px] text-slate-400 mt-0.5">
                       ${(optionPlay.entry.premium * optionMetrics.multiplier).toFixed(2)}/contract
@@ -685,12 +697,15 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
 
                   {/* 2. STOP-LOSS */}
                   <div className="p-2 rounded bg-slate-900/60 border border-rose-900/50">
-                    <div className="text-[10px] text-rose-400 font-bold uppercase tracking-wider mb-1 flex items-center gap-1">
-                      <ShieldCheck className="w-3 h-3" />
-                      <span>2. Stop-Loss</span>
+                    <div className="text-[10px] text-rose-400 font-bold uppercase tracking-wider mb-1 flex items-center justify-between">
+                      <span className="flex items-center gap-1"><ShieldCheck className="w-3 h-3" /> 2. Stop-Loss</span>
+                      <span className="text-[8px] text-amber-300/80 uppercase font-mono">Model Est.</span>
                     </div>
                     <div className="font-bold text-rose-400 text-sm tabular-nums">
                       ${optionPlay.stopLoss.premium.toFixed(2)}
+                    </div>
+                    <div className="text-[8px] text-slate-400 mt-0.5 font-mono">
+                      Estimated Premium (Black-Scholes/HV Approximation)
                     </div>
                     <div className="text-[10px] text-rose-400/90 mt-0.5 font-semibold">
                       {optionPlay.stopLoss.percentLoss}% Max Loss
@@ -702,12 +717,15 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
 
                   {/* 3. TARGET */}
                   <div className="p-2 rounded bg-slate-900/60 border border-emerald-900/50">
-                    <div className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider mb-1 flex items-center gap-1">
-                      <Target className="w-3 h-3" />
-                      <span>3. Target (TP)</span>
+                    <div className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider mb-1 flex items-center justify-between">
+                      <span className="flex items-center gap-1"><Target className="w-3 h-3" /> 3. Target (TP)</span>
+                      <span className="text-[8px] text-amber-300/80 uppercase font-mono">Model Est.</span>
                     </div>
                     <div className="font-bold text-emerald-400 text-sm tabular-nums">
                       ${optionMetrics.targetPrem.toFixed(2)}
+                    </div>
+                    <div className="text-[8px] text-slate-400 mt-0.5 font-mono">
+                      Estimated Premium (Black-Scholes/HV Approximation)
                     </div>
                     <div className="text-[10px] text-emerald-400/90 mt-0.5 font-semibold">
                       +{(Math.max(0, ((optionMetrics.targetPrem - optionPlay.entry.premium) / optionPlay.entry.premium) * 100)).toFixed(0)}% Return
@@ -772,7 +790,7 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                       type="button"
                       onClick={(e) => handleCopyOrder(dynamicCompoundTosOptionCommand, `compound-${optionPlay.id}`, e)}
                       className="w-full py-2.5 px-4 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs flex items-center justify-center gap-2 transition-all font-semibold cursor-pointer shadow-md shadow-sky-950/50 hover:shadow-sky-900/60 active:scale-[0.99]"
-                      title="Copy full 1st Triggers OCO compound bracket order (Parent Entry + Stop Loss + Take Profit) for simultaneous 3-leg paste into ThinkorSwim"
+                      title="Copies calculated theoretical bracket. Verify chain in TOS."
                     >
                       {copiedId === `compound-${optionPlay.id}` ? (
                         <>

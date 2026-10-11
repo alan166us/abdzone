@@ -25,6 +25,7 @@ export function calculateTrueRange(candles: Candle[]): number[] {
 
 /**
  * Calculates 14-period Wilder's Smoothed Average True Range (ATR)
+ * Clamped with a floor of currentPrice * 0.0005 to prevent zero-division and invalid stop multipliers
  */
 export function calculateATR(candles: Candle[], period: number = 14): number[] {
   const tr = calculateTrueRange(candles);
@@ -34,7 +35,7 @@ export function calculateATR(candles: Candle[], period: number = 14): number[] {
 
   if (tr.length < period) {
     const avg = tr.reduce((a, b) => a + b, 0) / tr.length;
-    return new Array(candles.length).fill(avg);
+    return candles.map(c => Math.max(c.close * 0.0005, avg));
   }
 
   // Initial SMA of TR for the first 'period' candles
@@ -43,17 +44,18 @@ export function calculateATR(candles: Candle[], period: number = 14): number[] {
     firstSum += tr[i];
   }
   let currentAtr = firstSum / period;
-  atr[period - 1] = currentAtr;
+  atr[period - 1] = Math.max(candles[period - 1].close * 0.0005, currentAtr);
 
   // Wilder smoothing: ATR[i] = (ATR[i-1] * (period - 1) + TR[i]) / period
   for (let i = period; i < candles.length; i++) {
     currentAtr = (currentAtr * (period - 1) + tr[i]) / period;
-    atr[i] = currentAtr;
+    const currentPrice = candles[i].close;
+    atr[i] = Math.max(currentPrice * 0.0005, currentAtr);
   }
 
-  // Fill in beginning for clean look
+  // Fill in beginning for clean look with floor protection
   for (let i = 0; i < period - 1; i++) {
-    atr[i] = atr[period - 1];
+    atr[i] = Math.max(candles[i].close * 0.0005, atr[period - 1]);
   }
 
   return atr;

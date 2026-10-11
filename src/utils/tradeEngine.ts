@@ -574,6 +574,47 @@ export function runHistoricalZoneBacktest(
 }
 
 /**
+ * Unifies contract multiplier & point value logic across the entire platform.
+ * Single source of truth for futures contracts, options deliverables, and equities.
+ * Explicit dictionary:
+ *  - /MES, MES: 5.0 ($1.25/tick)
+ *  - /MNQ, MNQ: 2.0 ($0.50/tick)
+ *  - /ES, ES: 50.0 ($12.50/tick)
+ *  - /NQ, NQ: 20.0 ($5.00/tick)
+ *  - /RTY: 50.0 ($5.00/tick)
+ *  - /CL: 1000.0 ($10.00/cent)
+ *  - /GC: 100.0 ($10.00/0.10)
+ *  - Equities/ETFs (SPY, PLTR, etc.): 100.0 (options deliverable)
+ */
+export function getContractPointValue(symbol: string): number {
+  if (!symbol) return 100.0;
+  const clean = symbol.trim().toUpperCase().replace('/', '');
+
+  if (clean === 'MES' || clean.startsWith('MES')) return 5.0;
+  if (clean === 'MNQ' || clean.startsWith('MNQ')) return 2.0;
+  if (clean === 'ES' || clean.startsWith('ES')) return 50.0;
+  if (clean === 'NQ' || clean.startsWith('NQ')) return 20.0;
+  if (clean === 'RTY' || clean.startsWith('RTY')) return 50.0;
+  if (clean === 'CL' || clean.startsWith('CL')) return 1000.0;
+  if (clean === 'GC' || clean.startsWith('GC')) return 100.0;
+
+  return 100.0;
+}
+
+export function isFuturesSymbol(symbol: string): boolean {
+  if (!symbol) return false;
+  const clean = symbol.trim().toUpperCase().replace('/', '');
+  return symbol.trim().startsWith('/') ||
+    clean === 'MES' || clean.startsWith('MES') ||
+    clean === 'MNQ' || clean.startsWith('MNQ') ||
+    clean === 'ES' || clean.startsWith('ES') ||
+    clean === 'NQ' || clean.startsWith('NQ') ||
+    clean === 'RTY' || clean.startsWith('RTY') ||
+    clean === 'CL' || clean.startsWith('CL') ||
+    clean === 'GC' || clean.startsWith('GC');
+}
+
+/**
  * Calculates position sizing based on account equity, risk budget, and symbol specifications.
  * For futures like /MES, calculates exact contracts based on point multiplier ($5/pt) and round-turn commissions.
  */
@@ -585,15 +626,12 @@ export function calculatePositionSize(
   symbol: string = 'SPY'
 ) {
   const riskBudget = (accountEquity * (riskPercent / 100));
+  const isFutures = isFuturesSymbol(symbol);
   const cleanSym = (symbol || '').toUpperCase();
   const isMes = cleanSym.includes('MES');
-  const isEs = !isMes && (cleanSym.includes('/ES') || cleanSym === 'ES');
-  const isMnq = cleanSym.includes('MNQ');
-  const isNq = !isMnq && (cleanSym.includes('/NQ') || cleanSym === 'NQ');
-  const isFutures = isMes || isEs || isMnq || isNq;
 
-  const pointValue = isMes ? 5.0 : isEs ? 50.0 : isMnq ? 2.0 : isNq ? 20.0 : 1.0;
-  const commission = isMes ? 5.0 : (isEs || isMnq || isNq) ? 5.0 : 0.0; // round-turn commission
+  const pointValue = isFutures ? getContractPointValue(symbol) : 1.0;
+  const commission = isFutures ? 5.0 : 0.0; // round-turn commission
 
   const stopDistance = Math.abs(entry - stopLoss);
   if (stopDistance <= 0) {

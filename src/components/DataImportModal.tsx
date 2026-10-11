@@ -27,7 +27,7 @@ interface DataImportModalProps {
 }
 
 // Sample Datasets
-const REAL_YAHOO_SPY_CSV = `Date,Open,High,Low,Close,Adj Close,Volume
+const REAL_EQUITY_SPY_CSV = `Date,Open,High,Low,Close,Adj Close,Volume
 2026-01-05,532.10,536.40,531.05,535.80,535.80,42100000
 2026-01-06,535.90,538.25,534.10,537.15,537.15,38900000
 2026-01-07,536.80,537.90,532.50,533.20,533.20,45300000
@@ -98,8 +98,8 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
   onImportData,
 }) => {
   const [activeTab, setActiveTab] = useState<'import' | 'guide'>('import');
-  const [symbolName, setSymbolName] = useState<string>('SPY (Yahoo)');
-  const [csvContent, setCsvContent] = useState<string>(REAL_YAHOO_SPY_CSV);
+  const [symbolName, setSymbolName] = useState<string>('SCHWAB:SPY_540C');
+  const [csvContent, setCsvContent] = useState<string>(REAL_SCHWAB_OPTION_BARS_CSV);
   const [error, setError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
 
@@ -170,8 +170,8 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
   const handleLoadSample = (type: 'spy' | 'schwab_options' | 'schwab_bars' | 'btc') => {
     setError(null);
     if (type === 'spy') {
-      setSymbolName('SPY (Yahoo Daily)');
-      setCsvContent(REAL_YAHOO_SPY_CSV);
+      setSymbolName('SPY (Daily Bars)');
+      setCsvContent(REAL_EQUITY_SPY_CSV);
       setParsedOptionsResult(null);
     } else if (type === 'schwab_options') {
       setSymbolName('SCHWAB:OPTION_ACTIVITY');
@@ -264,7 +264,7 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
             <div>
               <h3 className="text-sm font-bold text-white font-display">Real Market & Schwab Option Trade Import</h3>
               <p className="text-[11px] text-slate-400 font-mono">
-                Import CSVs from Charles Schwab (Options & Equities), Yahoo Finance, TradingView, or Binance
+                Import CSVs from Charles Schwab (Options & Equities), thinkorswim, TradingView, or Binance
               </p>
             </div>
           </div>
@@ -336,7 +336,7 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
                     onClick={() => handleLoadSample('spy')}
                     className="px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors"
                   >
-                    Yahoo (SPY Daily)
+                    SPY (Daily Bars)
                   </button>
                   <button
                     type="button"
@@ -479,7 +479,7 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({
                   </label>
                 </div>
                 <div className="text-[10px] text-slate-500 font-mono mt-1">
-                  Supports Schwab Account Activity Options, thinkorswim Trade History, Yahoo Finance, TradingView, and Binance
+                  Supports Schwab Account Activity Options, thinkorswim Trade History, TradingView, and Binance
                 </div>
               </div>
 

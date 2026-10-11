@@ -200,7 +200,7 @@ export function generateNextSimulatedCandle(
 
 /**
  * Parses user-uploaded CSV into typed Candle array with auto-detection for
- * Yahoo Finance, TradingView, Binance, MetaTrader, and Investing.com formats.
+ * Charles Schwab, thinkorswim, TradingView, Binance, MetaTrader, and Investing.com formats.
  */
 export function parseCandleCSV(csvText: string): Candle[] {
   const lines = csvText.trim().split(/\r?\n/).filter(line => line.trim().length > 0);
