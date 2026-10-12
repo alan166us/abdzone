@@ -177,7 +177,8 @@ export default function App() {
         if (!isBackgroundPoll) {
           setSelectedZoneId(null);
           setSelectedRecommendation(null);
-          setNotification(`Loaded ${cleanSym} (${freqLabel} · ${isLive ? 'Schwab Real-Time' : 'Exchange Feed Fallback'})`);
+          const feedLabel = isLive ? 'Schwab Real-Time' : 'DEMO / SYNTHETIC';
+          setNotification(`Loaded ${cleanSym} (${freqLabel} · ${feedLabel})`);
           setTimeout(() => setNotification(null), 3000);
         }
         setIsRefreshing(false);
@@ -337,9 +338,10 @@ export default function App() {
       currentPrice,
       zones,
       volatilityMetrics,
-      selectedAsset
+      selectedAsset,
+      dataSourceInfo.mode
     );
-  }, [currentPrice, zones, volatilityMetrics, selectedAsset]);
+  }, [currentPrice, zones, volatilityMetrics, selectedAsset, dataSourceInfo.mode]);
 
   // Default select first recommendation if none selected or if selected recommendation is stale
   useEffect(() => {
@@ -574,7 +576,16 @@ export default function App() {
                 symbol={selectedAsset}
                 frequency={frequency}
                 onFrequencyChange={handleFrequencyChange}
-                dataSourceInfo={isSimulating ? { source: 'simulation', isRealtime: true, lastUpdated: 'Replay Active', mode: 'synthetic' } : dataSourceInfo}
+                dataSourceInfo={
+                  isSimulating
+                    ? {
+                        source: 'simulation',
+                        isRealtime: false,
+                        lastUpdated: 'Replay Active',
+                        mode: 'synthetic',
+                      }
+                    : dataSourceInfo
+                }
                 onRefreshData={() => fetchAssetData(selectedAsset, frequency)}
                 isRefreshing={isRefreshing}
               />

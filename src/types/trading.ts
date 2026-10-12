@@ -175,6 +175,7 @@ export interface BacktestSummary {
   longestLossStreak: number;
   longWinRate: number;
   shortWinRate: number;
+  disclaimer?: string;
   trades: BacktestTrade[];
   equityCurve: EquityPoint[];
 }

@@ -1,5 +1,6 @@
 import { Candle, SupplyDemandZone, TradeRecommendation, VolatilityMetrics, BacktestSummary, BacktestTrade, BacktestConfig, EquityPoint } from '../types/trading';
 import { getContractPointValue } from './contractSpecs';
+import { detectSupplyDemandZones } from './zoneDetector';
 
 export { getContractPointValue };
 
@@ -12,7 +13,8 @@ export { getContractPointValue };
  */
 export function calculateHeuristicQualityScore(
   zone: SupplyDemandZone,
-  volatilityMetrics?: VolatilityMetrics
+  volatilityMetrics?: VolatilityMetrics,
+  dataSource?: string
 ): number {
   let score = 0;
 
@@ -28,8 +30,12 @@ export function calculateHeuristicQualityScore(
     score += 25;
   }
 
-  // 3. Volume Ratio (Wholesale Imbalance >= 1.5x = +25)
-  if (zone.volumeImbalanceRatio !== undefined && zone.volumeImbalanceRatio >= 1.5) {
+  // Gate volume points strictly on genuine market feeds
+  if (
+    dataSource !== 'synthetic' &&
+    zone.volumeImbalanceRatio !== undefined &&
+    zone.volumeImbalanceRatio >= 1.5
+  ) {
     score += 25;
   }
 
@@ -49,7 +55,8 @@ export function generateTradeRecommendations(
   currentPrice: number,
   zones: SupplyDemandZone[],
   volatilityMetrics: VolatilityMetrics,
-  symbol: string = 'BTC/USDT'
+  symbol: string = 'BTC/USDT',
+  dataSource?: string
 ): TradeRecommendation[] {
   const recommendations: TradeRecommendation[] = [];
   const atr = volatilityMetrics.atr || currentPrice * 0.015;
@@ -116,7 +123,9 @@ export function generateTradeRecommendations(
 
     const distancePercent = ((currentPrice - entry) / currentPrice) * 100;
     const tags = zone.confluenceTags && zone.confluenceTags.length > 0 ? zone.confluenceTags.join(' · ') : 'Standard Imbalance';
-    const heuristicQualityScore = calculateHeuristicQualityScore(zone, volatilityMetrics);
+    const heuristicQualityScore =
+      zone.heuristicQualityScore ??
+      calculateHeuristicQualityScore(zone, volatilityMetrics, dataSource);
 
     recommendations.push({
       id: `rec-long-${zone.id}`,
@@ -173,7 +182,9 @@ export function generateTradeRecommendations(
 
     const distancePercent = ((entry - currentPrice) / currentPrice) * 100;
     const tags = zone.confluenceTags && zone.confluenceTags.length > 0 ? zone.confluenceTags.join(' · ') : 'Standard Imbalance';
-    const heuristicQualityScore = calculateHeuristicQualityScore(zone, volatilityMetrics);
+    const heuristicQualityScore =
+      zone.heuristicQualityScore ??
+      calculateHeuristicQualityScore(zone, volatilityMetrics, dataSource);
 
     recommendations.push({
       id: `rec-short-${zone.id}`,
@@ -257,6 +268,7 @@ export function runHistoricalZoneBacktest(
       longestLossStreak: 0,
       longWinRate: 0,
       shortWinRate: 0,
+      disclaimer: 'Walk-forward zone detection — no lookahead bias.',
       trades: [],
       equityCurve: [],
     };
@@ -298,23 +310,6 @@ export function runHistoricalZoneBacktest(
 
   const totalCandlesInRange = filteredCandles.length > 0 ? filteredCandles.length : candles.length;
 
-  // Filter eligible zones based on user parameters and date range
-  const eligibleZones = zones.filter(zone => {
-    // Quality score filter
-    if (zone.strengthScore < config.minQualityScore) return false;
-
-    // Side filter
-    if (config.sideFilter === 'long' && zone.type !== 'demand') return false;
-    if (config.sideFilter === 'short' && zone.type !== 'supply') return false;
-
-    // Fresh only filter
-    if (config.freshOnly && zone.testedCount > 0) return false;
-
-    // Must be formed on or within the date window
-    const zoneTime = zone.startTime;
-    return zoneTime >= startTime && zoneTime <= endTime;
-  });
-
   const trades: BacktestTrade[] = [];
   let currentBalance = config.initialBalance;
   let peakBalance = currentBalance;
@@ -334,56 +329,77 @@ export function runHistoricalZoneBacktest(
   // Target multipliers based on user targetMode
   const targetRMultiple = config.targetMode === 'tp1' ? 2.0 : (config.targetMode === 'tp2' ? 3.0 : 4.5);
 
-  for (const zone of eligibleZones) {
-    const isLong = zone.type === 'demand';
-    const atr = zone.volatilityAtCreation || (zone.high * 0.015);
-    const buffer = atr * config.atrBufferMultiplier;
+  // Strict Walk-Forward Zone Detection & Simulation:
+  // Step through candles from index j = 30 to candles.length without lookahead bias.
+  // Track traded zone IDs to prevent duplicate trades from the same structural level.
+  const tradedZoneIds = new Set<string>();
 
-    const entryPrice = isLong ? zone.high : zone.low;
-    const stopLoss = isLong ? Math.max(0.0001, zone.low - buffer) : zone.high + buffer;
-    const riskPerUnit = Math.abs(entryPrice - stopLoss);
-    if (riskPerUnit <= 0) continue;
+  for (let j = 30; j < candles.length; j++) {
+    const currentBar = candles[j];
+    if (currentBar.time < startTime) continue;
+    if (currentBar.time > endTime) break;
 
-    // Take-Profit calculated from risk per unit
-    const tpPrice = isLong ? entryPrice + riskPerUnit * targetRMultiple : entryPrice - riskPerUnit * targetRMultiple;
+    // Detect zones strictly on the historical slice candles.slice(0, j + 1)
+    const historicalSlice = candles.slice(0, j + 1);
+    const walkForwardZones = detectSupplyDemandZones(historicalSlice, {
+      recentOnly: false,
+      includeMitigated: false,
+    });
 
-    // Position sizing based on current portfolio equity at the trade execution
-    const riskBudget = currentBalance * (config.riskPercent / 100);
-    const units = riskBudget / riskPerUnit;
+    // Consider for entry only zones where zone.endIndex < j (formed strictly prior to bar j)
+    const eligibleZones = walkForwardZones.filter(zone => {
+      if (zone.endIndex >= j) return false;
+      if (tradedZoneIds.has(zone.id)) return false;
 
-    let orderTriggered = false;
-    let entryIndex = -1;
-    let entryTime = 0;
-    let entryDateStr = '';
+      // Quality score filter
+      const score = zone.heuristicQualityScore ?? zone.strengthScore;
+      if (score < config.minQualityScore) return false;
 
-    // Simulate subsequent candles within date range
-    for (let j = zone.endIndex + 1; j < candles.length; j++) {
-      const c = candles[j];
+      // Side filter
+      if (config.sideFilter === 'long' && zone.type !== 'demand') return false;
+      if (config.sideFilter === 'short' && zone.type !== 'supply') return false;
 
-      // Stop simulating if beyond end date
-      if (c.time > endTime) {
-        break;
-      }
+      // Fresh only filter
+      if (config.freshOnly && zone.testedCount > 0) return false;
 
-      if (!orderTriggered) {
-        // Test if price pulled back into the zone entry
-        if (isLong && c.low <= entryPrice && c.open > entryPrice * 0.95) {
-          orderTriggered = true;
-          entryIndex = j;
-          entryTime = c.time;
-          entryDateStr = c.dateStr;
-        } else if (!isLong && c.high >= entryPrice && c.open < entryPrice * 1.05) {
-          orderTriggered = true;
-          entryIndex = j;
-          entryTime = c.time;
-          entryDateStr = c.dateStr;
-        }
-      } else {
-        // Trade is open: evaluate outcome
-        const barsHeld = j - entryIndex;
+      return true;
+    });
+
+    // If an eligible zone is triggered on bar j or immediately adjacent, evaluate the trade
+    for (const zone of eligibleZones) {
+      const isLong = zone.type === 'demand';
+      const atr = zone.volatilityAtCreation || (zone.high * 0.015);
+      const buffer = atr * config.atrBufferMultiplier;
+
+      const entryPrice = isLong ? zone.high : zone.low;
+      const stopLoss = isLong ? Math.max(0.0001, zone.low - buffer) : zone.high + buffer;
+      const riskPerUnit = Math.abs(entryPrice - stopLoss);
+      if (riskPerUnit <= 0) continue;
+
+      // Check if current bar triggered entry into the zone
+      const triggeredOnCurrentBar = isLong
+        ? currentBar.low <= entryPrice && currentBar.open > entryPrice * 0.95
+        : currentBar.high >= entryPrice && currentBar.open < entryPrice * 1.05;
+
+      if (!triggeredOnCurrentBar) continue;
+
+      // Mark zone as traded so we don't duplicate
+      tradedZoneIds.add(zone.id);
+
+      const tpPrice = isLong ? entryPrice + riskPerUnit * targetRMultiple : entryPrice - riskPerUnit * targetRMultiple;
+      const riskBudget = currentBalance * (config.riskPercent / 100);
+      const entryIndex = j;
+      const entryTime = currentBar.time;
+      const entryDateStr = currentBar.dateStr;
+
+      // Evaluate trade triggers and exits strictly on subsequent bars (> j)
+      for (let k = j + 1; k < candles.length; k++) {
+        const c = candles[k];
+        if (c.time > endTime) break;
+
+        const barsHeld = k - entryIndex;
 
         if (isLong) {
-          // Check Stop-Loss first
           if (c.low <= stopLoss) {
             const lossDollar = -riskBudget;
             currentBalance += lossDollar;
@@ -404,7 +420,7 @@ export function runHistoricalZoneBacktest(
               entryTime,
               entryDateStr,
               entryPrice,
-              exitIndex: j,
+              exitIndex: k,
               exitTime: c.time,
               exitDateStr: c.dateStr,
               exitPrice: stopLoss,
@@ -418,7 +434,7 @@ export function runHistoricalZoneBacktest(
               pnlDollar: lossDollar,
               balanceAfter: currentBalance,
               barsHeld,
-              qualityScore: zone.strengthScore,
+              qualityScore: zone.heuristicQualityScore ?? zone.strengthScore,
             });
 
             equityCurve.push({
@@ -431,7 +447,6 @@ export function runHistoricalZoneBacktest(
             });
             break;
           } else if (c.high >= tpPrice) {
-            // Take-Profit hit
             const gainDollar = riskBudget * targetRMultiple;
             currentBalance += gainDollar;
             const pnlPercent = ((tpPrice - entryPrice) / entryPrice) * 100;
@@ -448,7 +463,7 @@ export function runHistoricalZoneBacktest(
               entryTime,
               entryDateStr,
               entryPrice,
-              exitIndex: j,
+              exitIndex: k,
               exitTime: c.time,
               exitDateStr: c.dateStr,
               exitPrice: tpPrice,
@@ -462,7 +477,7 @@ export function runHistoricalZoneBacktest(
               pnlDollar: gainDollar,
               balanceAfter: currentBalance,
               barsHeld,
-              qualityScore: zone.strengthScore,
+              qualityScore: zone.heuristicQualityScore ?? zone.strengthScore,
             });
 
             equityCurve.push({
@@ -476,7 +491,7 @@ export function runHistoricalZoneBacktest(
             break;
           }
         } else {
-          // Short
+          // Short trade
           if (c.high >= stopLoss) {
             const lossDollar = -riskBudget;
             currentBalance += lossDollar;
@@ -497,7 +512,7 @@ export function runHistoricalZoneBacktest(
               entryTime,
               entryDateStr,
               entryPrice,
-              exitIndex: j,
+              exitIndex: k,
               exitTime: c.time,
               exitDateStr: c.dateStr,
               exitPrice: stopLoss,
@@ -511,7 +526,7 @@ export function runHistoricalZoneBacktest(
               pnlDollar: lossDollar,
               balanceAfter: currentBalance,
               barsHeld,
-              qualityScore: zone.strengthScore,
+              qualityScore: zone.heuristicQualityScore ?? zone.strengthScore,
             });
 
             equityCurve.push({
@@ -540,7 +555,7 @@ export function runHistoricalZoneBacktest(
               entryTime,
               entryDateStr,
               entryPrice,
-              exitIndex: j,
+              exitIndex: k,
               exitTime: c.time,
               exitDateStr: c.dateStr,
               exitPrice: tpPrice,
@@ -554,7 +569,7 @@ export function runHistoricalZoneBacktest(
               pnlDollar: gainDollar,
               balanceAfter: currentBalance,
               barsHeld,
-              qualityScore: zone.strengthScore,
+              qualityScore: zone.heuristicQualityScore ?? zone.strengthScore,
             });
 
             equityCurve.push({
@@ -639,6 +654,7 @@ export function runHistoricalZoneBacktest(
     longestLossStreak: maxLossStreak,
     longWinRate,
     shortWinRate,
+    disclaimer: 'Walk-forward zone detection — no lookahead bias.',
     trades: trades.sort((a, b) => b.entryTime - a.entryTime),
     equityCurve,
   };

@@ -222,7 +222,14 @@ export const StrategyBacktest: React.FC<StrategyBacktestProps> = ({
       {/* 1. Header & Date Range Control Bar */}
       <div className="px-6 py-4 border-b border-slate-800 bg-[#0F172A]/70 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="text-base font-bold text-white font-display">Historical Strategy Backtest Engine</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-bold text-white font-display">Historical Strategy Backtest Engine</h2>
+            {summary.disclaimer && (
+              <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-800 text-[10px] font-mono text-emerald-300">
+                {summary.disclaimer}
+              </span>
+            )}
+          </div>
           <p className="text-xs text-slate-400 mt-0.5">
             Test automatic Supply & Demand detection and volatility-adjusted entry/exit setups across historical market cycles.
           </p>

@@ -366,7 +366,11 @@ export function detectSupplyDemandZones(
       heuristicScore += 25;
     }
 
-    if (volumeImbalanceRatio >= 1.5) {
+    // 3. Volume Ratio (Wholesale Imbalance >= 1.5x = +25, gate out synthetic)
+    if (
+      dataSource !== 'synthetic' &&
+      volumeImbalanceRatio >= 1.5
+    ) {
       heuristicScore += 25;
     }
 
