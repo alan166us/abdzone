@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { TradeRecommendation, VolatilityMetrics } from '../types/trading';
+import { TradeRecommendation, VolatilityMetrics, SupplyDemandZone, Candle } from '../types/trading';
 import { 
   generateSchwabOptionPlay, 
   SchwabOptionContractRecommendation,
@@ -7,10 +7,11 @@ import {
   formatTosNaturalOptionCommand,
   formatTosStockOrFuturesCommand,
   formatSchwabStockSummary,
-  getContractPointValue,
   formatTosCompoundOptionBracketCommand,
   formatTosCompoundStockOrFuturesBracketCommand
 } from '../utils/optionsEngine';
+import { getContractPointValue, getContractSpecs } from '../utils/contractSpecs';
+import { calculateSessionVwap } from '../utils/vwapEngine';
 import { 
   ArrowUpRight, 
   ArrowDownRight, 
@@ -33,7 +34,8 @@ import {
   ChevronUp,
   DollarSign,
   AlertTriangle,
-  Sparkles
+  Sparkles,
+  Activity
 } from 'lucide-react';
 
 export interface CustomTradeParams {
@@ -55,6 +57,10 @@ interface TradeRecommendationPanelProps {
   onOpenTosModal?: (rec: TradeRecommendation) => void;
   onLogToJournal?: (rec: TradeRecommendation) => void;
   onOpenAiChat?: (initialMessage?: string, role?: 'daily_coach' | 'quant' | 'risk_architect' | 'fast_scalp') => void;
+  zones?: SupplyDemandZone[];
+  currentPrice?: number;
+  candles?: Candle[];
+  onSelectAsset?: (symbol: string) => void;
 }
 
 export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> = ({
@@ -68,6 +74,10 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
   onOpenTosModal,
   onLogToJournal,
   onOpenAiChat,
+  zones,
+  currentPrice,
+  candles,
+  onSelectAsset,
 }) => {
   const isFutures = Boolean(
     ticker.toUpperCase().includes('MES') ||
@@ -311,9 +321,285 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
   };
 
   if (recommendations.length === 0) {
+    const specs = getContractSpecs(ticker);
+    const pointMultiplier = getContractPointValue(ticker);
+
+    // Determine effective spot price
+    const effectiveSpot = currentPrice && currentPrice > 0
+      ? currentPrice
+      : (candles && candles.length > 0 ? candles[candles.length - 1].close : 5800);
+
+    const atr = volatilityMetrics?.atr || effectiveSpot * 0.015;
+    const dollarRangePerBar = atr * pointMultiplier;
+
+    // Auction & Session VWAP
+    const sessionVwapList = candles && candles.length > 0 ? calculateSessionVwap(candles) : [];
+    const latestVwapPoint = sessionVwapList.length > 0 ? sessionVwapList[sessionVwapList.length - 1] : null;
+
+    const vwap = latestVwapPoint ? latestVwapPoint.vwap : effectiveSpot;
+    const upper1 = latestVwapPoint ? latestVwapPoint.upper1 : Number((vwap + atr * 1.0).toFixed(2));
+    const lower1 = latestVwapPoint ? latestVwapPoint.lower1 : Number((vwap - atr * 1.0).toFixed(2));
+    const upper2 = latestVwapPoint ? latestVwapPoint.upper2 : Number((vwap + atr * 2.0).toFixed(2));
+    const lower2 = latestVwapPoint ? latestVwapPoint.lower2 : Number((vwap - atr * 2.0).toFixed(2));
+
+    const vwapDelta = effectiveSpot - vwap;
+    const isAboveVwap = vwapDelta >= 0;
+
+    // Structural Proximity: Nearest Demand zone below & Nearest Supply zone above
+    const demandZonesBelow = (zones || [])
+      .filter((z) => z.type === 'demand' && (z.proximalLine || z.high) <= effectiveSpot)
+      .sort((a, b) => (b.proximalLine || b.high) - (a.proximalLine || a.high));
+
+    const supplyZonesAbove = (zones || [])
+      .filter((z) => z.type === 'supply' && (z.proximalLine || z.low) >= effectiveSpot)
+      .sort((a, b) => (a.proximalLine || a.low) - (b.proximalLine || b.low));
+
+    const nearestDemand = demandZonesBelow[0];
+    const nearestSupply = supplyZonesAbove[0];
+
+    const demandPrice = nearestDemand
+      ? (nearestDemand.proximalLine || nearestDemand.high)
+      : Number((effectiveSpot - atr * 2.5).toFixed(2));
+    const supplyPrice = nearestSupply
+      ? (nearestSupply.proximalLine || nearestSupply.low)
+      : Number((effectiveSpot + atr * 2.5).toFixed(2));
+
+    const demandDistPts = Math.max(0.01, effectiveSpot - demandPrice);
+    const demandDistAtr = Number((demandDistPts / Math.max(0.0001, atr)).toFixed(2));
+
+    const supplyDistPts = Math.max(0.01, supplyPrice - effectiveSpot);
+    const supplyDistAtr = Number((supplyDistPts / Math.max(0.0001, atr)).toFixed(2));
+
+    // Gauge positioning (percentage of current spot between demand floor and supply ceiling)
+    const rangeSpan = Math.max(0.01, supplyPrice - demandPrice);
+    const gaugePct = Math.min(100, Math.max(0, ((effectiveSpot - demandPrice) / rangeSpan) * 100));
+
+    // Active symbols list for quick radar
+    const trackedSymbols = ['/MES', '/MNQ', 'SPY', 'QQQ', 'NVDA', 'TSLA'];
+
     return (
-      <div className="p-6 text-center text-slate-500 text-xs">
-        No active zone setups within proximity of current spot price. Price is currently traversing intermediate range.
+      <div className="flex flex-col gap-3 font-mono">
+        {/* 1. Header Card */}
+        <div className="bg-[#0B0F17] rounded-lg border border-slate-800 p-3.5 shadow-md">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+              <h3 className="text-xs font-bold text-white tracking-wider font-display uppercase">
+                SYMBOL RADAR: {ticker}
+              </h3>
+            </div>
+            <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30">
+              Range Equilibrium / Stand Down
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-slate-800/80 text-xs">
+            <div className="bg-slate-900/80 p-2 rounded border border-slate-800">
+              <span className="text-[10px] text-slate-400 block mb-0.5">Spot Price</span>
+              <span className="text-sm font-bold text-white tracking-tight">
+                ${effectiveSpot.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+            <div className="bg-slate-900/80 p-2 rounded border border-slate-800">
+              <span className="text-[10px] text-slate-400 block mb-0.5">ATR(14) Range / Bar</span>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-sm font-bold text-amber-300">
+                  {atr.toFixed(2)} pts
+                </span>
+                <span className="text-[10px] text-slate-400">
+                  (~${dollarRangePerBar.toFixed(2)})
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 2. Contract Specifications Card */}
+        <div className="bg-[#0B0F17] rounded-lg border border-slate-800 p-3.5 shadow-md">
+          <div className="text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+            <Scale className="w-3.5 h-3.5 text-sky-400" />
+            <span>Contract Specifications</span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="p-2 rounded bg-slate-900/70 border border-slate-800/80">
+              <span className="text-[10px] text-slate-400 block">Asset Class</span>
+              <span className="text-slate-200 font-semibold">{specs.assetClass}</span>
+            </div>
+            <div className="p-2 rounded bg-slate-900/70 border border-slate-800/80">
+              <span className="text-[10px] text-slate-400 block">Point Multiplier</span>
+              <span className="text-sky-300 font-bold">${pointMultiplier.toFixed(2)} / pt</span>
+            </div>
+            <div className="p-2 rounded bg-slate-900/70 border border-slate-800/80">
+              <span className="text-[10px] text-slate-400 block">Tick Size & Value</span>
+              <span className="text-slate-200 font-semibold">{specs.tickSize} pt = ${specs.tickValue.toFixed(2)}</span>
+            </div>
+            <div className="p-2 rounded bg-slate-900/70 border border-slate-800/80">
+              <span className="text-[10px] text-slate-400 block">TOS Product Code</span>
+              <span className="text-emerald-300 font-bold">{specs.tosSymbol}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* 3. Auction & VWAP Positioning Card */}
+        <div className="bg-[#0B0F17] rounded-lg border border-slate-800 p-3.5 shadow-md">
+          <div className="text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-2.5 flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <Activity className="w-3.5 h-3.5 text-amber-400" />
+              <span>Auction & VWAP Positioning</span>
+            </div>
+            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+              isAboveVwap
+                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                : 'bg-rose-500/10 text-rose-400 border border-rose-500/30'
+            }`}>
+              {isAboveVwap ? 'Above VWAP' : 'Below VWAP'} ({vwapDelta >= 0 ? '+' : ''}{vwapDelta.toFixed(2)} pts)
+            </span>
+          </div>
+
+          <div className="space-y-2 text-xs">
+            <div className="flex items-center justify-between p-2 rounded bg-slate-900/70 border border-slate-800/80">
+              <span className="text-slate-400 text-[11px]">Session VWAP</span>
+              <span className="font-bold text-amber-300">${vwap.toFixed(2)}</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-[11px]">
+              <div className="p-2 rounded bg-slate-900/50 border border-rose-950/40">
+                <span className="text-rose-400 font-semibold block text-[10px]">Upper Value Bands</span>
+                <div className="text-slate-300 mt-0.5 space-y-0.5">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">+1σ:</span>
+                    <span className="font-mono text-rose-200">${upper1.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">+2σ:</span>
+                    <span className="font-mono text-rose-300 font-semibold">${upper2.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-2 rounded bg-slate-900/50 border border-emerald-950/40">
+                <span className="text-emerald-400 font-semibold block text-[10px]">Lower Value Bands</span>
+                <div className="text-slate-300 mt-0.5 space-y-0.5">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">-1σ:</span>
+                    <span className="font-mono text-emerald-200">${lower1.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">-2σ:</span>
+                    <span className="font-mono text-emerald-300 font-semibold">${lower2.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 4. Structural Proximity Compass */}
+        <div className="bg-[#0B0F17] rounded-lg border border-slate-800 p-3.5 shadow-md">
+          <div className="text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-2.5 flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <Crosshair className="w-3.5 h-3.5 text-sky-400" />
+              <span>Structural Proximity Compass</span>
+            </div>
+            <span className="text-[10px] text-slate-500 font-mono">Spot at {gaugePct.toFixed(0)}% Range</span>
+          </div>
+
+          {/* Visual Horizontal Range Gauge */}
+          <div className="mb-3 p-2 bg-slate-950/80 rounded border border-slate-800/80">
+            <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+              <span className="text-emerald-400 font-semibold">Demand Floor: ${demandPrice.toFixed(2)}</span>
+              <span className="text-rose-400 font-semibold">Supply Ceiling: ${supplyPrice.toFixed(2)}</span>
+            </div>
+            
+            {/* Range Track */}
+            <div className="relative w-full h-3 bg-slate-800/90 rounded-full overflow-hidden border border-slate-700/60">
+              <div 
+                className="absolute top-0 bottom-0 left-0 bg-gradient-to-r from-emerald-600/60 via-amber-600/40 to-rose-600/60"
+                style={{ width: '100%' }}
+              />
+              {/* Spot Marker Pin */}
+              <div 
+                className="absolute top-0 bottom-0 w-2 -ml-1 bg-white rounded-full shadow-[0_0_8px_#fff] transition-all"
+                style={{ left: `${gaugePct}%` }}
+              />
+            </div>
+            <div className="flex justify-between text-[9px] text-slate-500 mt-1">
+              <span>{demandDistAtr}x ATR below</span>
+              <span className="text-sky-300 font-bold">Spot ${effectiveSpot.toFixed(2)}</span>
+              <span>{supplyDistAtr}x ATR above</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="p-2 rounded bg-emerald-950/20 border border-emerald-800/40">
+              <div className="flex items-center gap-1 text-emerald-400 font-semibold text-[10px] uppercase mb-1">
+                <ArrowUpRight className="w-3 h-3" />
+                <span>Nearest Demand</span>
+              </div>
+              <div className="font-bold text-white text-xs">${demandPrice.toFixed(2)}</div>
+              <div className="text-[10px] text-emerald-300/80 mt-0.5">
+                -{demandDistPts.toFixed(2)} pts ({demandDistAtr}x ATR)
+              </div>
+            </div>
+
+            <div className="p-2 rounded bg-rose-950/20 border border-rose-800/40">
+              <div className="flex items-center gap-1 text-rose-400 font-semibold text-[10px] uppercase mb-1">
+                <ArrowDownRight className="w-3 h-3" />
+                <span>Nearest Supply</span>
+              </div>
+              <div className="font-bold text-white text-xs">${supplyPrice.toFixed(2)}</div>
+              <div className="text-[10px] text-rose-300/80 mt-0.5">
+                +{supplyDistPts.toFixed(2)} pts ({supplyDistAtr}x ATR)
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 5. Actionable Game Plan Alert */}
+        <div className="p-3 bg-amber-950/20 border border-amber-500/40 rounded-lg shadow-sm">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <div className="text-[11px] font-bold text-amber-300 uppercase tracking-wide mb-1">
+                Game Plan Alert
+              </div>
+              <p className="text-[11px] leading-relaxed text-amber-200/90 font-sans">
+                Price is traversing intermediate range without institutional imbalance. Stand down on market orders. Staging orders near Demand floor or Supply ceiling will activate execution brackets once boundary threshold is met.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* 6. Quick Symbol Scanner Switcher */}
+        {onSelectAsset && (
+          <div className="bg-[#0B0F17] rounded-lg border border-slate-800 p-3 shadow-md">
+            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center justify-between">
+              <span>Quick Asset Radar</span>
+              <span className="text-[10px] text-slate-500">Switch Chart</span>
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {trackedSymbols.map((sym) => {
+                const isCurrent = actualTicker.replace(/^\//, '') === sym.replace(/^\//, '');
+                return (
+                  <button
+                    key={sym}
+                    type="button"
+                    onClick={() => onSelectAsset(sym)}
+                    className={`py-1.5 px-2 rounded text-[11px] font-bold transition-all border flex items-center justify-center gap-1 ${
+                      isCurrent
+                        ? 'bg-sky-600/30 border-sky-500 text-sky-200 shadow-xs'
+                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                    }`}
+                  >
+                    <span>{sym}</span>
+                    {isCurrent && <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     );
   }

@@ -334,14 +334,26 @@ export default function App() {
     if (isIndexFutures && currentPrice < 2000) {
       return [];
     }
-    return generateTradeRecommendations(
+    const recs = generateTradeRecommendations(
       currentPrice,
       zones,
       volatilityMetrics,
       selectedAsset,
       dataSourceInfo.mode
     );
-  }, [currentPrice, zones, volatilityMetrics, selectedAsset, dataSourceInfo.mode]);
+    if (recs.length === 0 && allHistoricalZones.length > 0) {
+      // Responsive Zone Relaxation: If no strict fresh zone in immediate proximity produces a trade recommendation,
+      // fallback to evaluating nearest unmitigated historical zones so the deck provides actionable structural guidance
+      return generateTradeRecommendations(
+        currentPrice,
+        allHistoricalZones.filter((z) => !z.isMitigated),
+        volatilityMetrics,
+        selectedAsset,
+        dataSourceInfo.mode
+      );
+    }
+    return recs;
+  }, [currentPrice, zones, allHistoricalZones, volatilityMetrics, selectedAsset, dataSourceInfo.mode]);
 
   // Default select first recommendation if none selected or if selected recommendation is stale
   useEffect(() => {
@@ -629,6 +641,10 @@ export default function App() {
                   }}
                   onLogToJournal={handleLogRecommendationToJournal}
                   onOpenAiChat={handleOpenAiChatWithPrompt}
+                  zones={allHistoricalZones}
+                  currentPrice={currentPrice}
+                  candles={candles}
+                  onSelectAsset={handleSelectAsset}
                 />
 
                 {/* Secondary Section: Pristine Untested Order Blocks */}
