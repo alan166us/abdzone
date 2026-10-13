@@ -572,7 +572,7 @@ export default function App() {
       />
 
       {/* 2. Main Content Viewport */}
-      <main className="flex-1 overflow-hidden p-3 md:p-4 min-h-0 flex flex-col">
+      <main className="flex-1 overflow-hidden p-3 md:p-4 pb-16 md:pb-6 min-h-0 flex flex-col">
         {/* VIEW 1: Main Chart Terminal + Recommendation Deck */}
         {activeTab === 'chart' && (
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 h-full min-h-0 flex-1">
@@ -890,7 +890,7 @@ export default function App() {
       {!isChatOpen && (
         <button
           onClick={() => setIsChatOpen(true)}
-          className="fixed bottom-5 right-5 z-40 flex items-center gap-2 px-3.5 py-2.5 rounded-full bg-gradient-to-r from-emerald-600 to-sky-600 hover:from-emerald-500 hover:to-sky-500 text-white shadow-xl shadow-emerald-950/80 border border-emerald-400/40 font-mono text-xs font-semibold cursor-pointer transition-all hover:scale-105 active:scale-95 group"
+          className="fixed bottom-3 right-3 z-50 scale-90 sm:scale-100 shadow-xl flex items-center gap-2 px-3.5 py-2.5 rounded-full bg-gradient-to-r from-emerald-600 to-sky-600 hover:from-emerald-500 hover:to-sky-500 text-white shadow-emerald-950/80 border border-emerald-400/40 font-mono text-xs font-semibold cursor-pointer transition-all hover:scale-105 active:scale-95 group"
           title="Open Real-Time Gemini 3.8 AI Market Copilot"
         >
           <Bot className="w-4 h-4 text-emerald-200 animate-pulse" />

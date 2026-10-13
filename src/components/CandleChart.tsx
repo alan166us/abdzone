@@ -1282,7 +1282,94 @@ export const CandleChart: React.FC<CandleChartProps> = ({
       </div>
 
       {/* 2. Interactive Chart Canvas Viewport */}
-      <div className="flex-1 w-full min-h-0 relative cursor-crosshair">
+      <div className="flex-1 w-full min-h-[380px] h-[52vh] md:h-auto min-h-0 relative cursor-crosshair">
+        {/* Floating / Mobile Swipeable Quick Action Overlay Controls (swipeable pill bar on mobile pinned cleanly above/at top edge of canvas, floating on desktop) */}
+        <div className="sm:absolute sm:top-3 sm:left-3 relative w-full sm:w-auto px-2 py-1 sm:p-1 flex flex-nowrap overflow-x-auto no-scrollbar gap-1.5 bg-slate-900/95 sm:bg-slate-900/90 border-b sm:border border-slate-800 sm:rounded-lg backdrop-blur-md z-20 shadow-lg shrink-0">
+          <button
+            onClick={() => handleZoom('in')}
+            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-colors shrink-0"
+            title="Zoom In (Scroll Up)"
+          >
+            <ZoomIn className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => handleZoom('out')}
+            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-colors shrink-0"
+            title="Zoom Out (Scroll Down)"
+          >
+            <ZoomOut className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={handleResetView}
+            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-colors shrink-0"
+            title="Reset to Latest View"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+          </button>
+
+          <div className="w-[1px] h-4 bg-slate-800 mx-0.5 shrink-0" />
+
+          {/* Layer toggles */}
+          <button
+            onClick={() => setRecentOnlyZones(!recentOnlyZones)}
+            className={`px-2 py-1 text-[10px] font-medium rounded transition-colors shrink-0 whitespace-nowrap ${
+              recentOnlyZones ? 'bg-sky-950/80 text-sky-300 border border-sky-800/60 font-semibold' : 'text-slate-500 hover:text-slate-300'
+            }`}
+            title={recentOnlyZones ? "Showing strictly the single most recent active Demand and Supply zone" : "Showing all historical detected zones"}
+          >
+            {recentOnlyZones ? '⚡ Recent (1 D / 1 S)' : 'All Historical'}
+          </button>
+          <button
+            onClick={() => setShowDemand(!showDemand)}
+            className={`px-2 py-1 text-[10px] font-medium rounded transition-colors shrink-0 whitespace-nowrap ${
+              showDemand ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-800/60' : 'text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            Demand Zones
+          </button>
+          <button
+            onClick={() => setShowSupply(!showSupply)}
+            className={`px-2 py-1 text-[10px] font-medium rounded transition-colors shrink-0 whitespace-nowrap ${
+              showSupply ? 'bg-rose-950/80 text-rose-300 border border-rose-800/60' : 'text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            Supply Zones
+          </button>
+          <button
+            onClick={() => setShowMitigated(!showMitigated)}
+            className={`hidden sm:inline-block px-2 py-1 text-[10px] font-medium rounded transition-colors shrink-0 whitespace-nowrap ${
+              showMitigated ? 'bg-indigo-950/80 text-indigo-300 border border-indigo-800/60' : 'text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            Mitigated Zones
+          </button>
+          <button
+            onClick={() => setShowVwap(!showVwap)}
+            className={`px-2 py-1 text-[10px] font-medium rounded transition-colors shrink-0 whitespace-nowrap ${
+              showVwap ? 'bg-amber-950/80 text-amber-300 border border-amber-800/60 font-semibold' : 'text-slate-500 hover:text-slate-300'
+            }`}
+            title="Toggle Session VWAP with ±1σ / ±2σ Standard Deviation Bands"
+          >
+            ⚡ VWAP (±2σ)
+          </button>
+          <button
+            onClick={() => setShowAtrBands(!showAtrBands)}
+            className={`hidden md:inline-block px-2 py-1 text-[10px] font-medium rounded transition-colors shrink-0 whitespace-nowrap ${
+              showAtrBands ? 'bg-sky-950/80 text-sky-300 border border-sky-800/60' : 'text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            ATR Volatility Bands
+          </button>
+          <button
+            onClick={() => setShowTradeSetup(!showTradeSetup)}
+            className={`px-2 py-1 text-[10px] font-medium rounded transition-colors shrink-0 whitespace-nowrap ${
+              showTradeSetup ? 'bg-cyan-950/80 text-cyan-300 border border-cyan-800/60' : 'text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            Trade Targets
+          </button>
+        </div>
+
         <canvas
           ref={canvasRef}
           className="w-full h-full block"
@@ -1293,130 +1380,42 @@ export const CandleChart: React.FC<CandleChartProps> = ({
           onClick={handleCanvasClick}
           onWheel={handleWheel}
         />
-
-        {/* Floating Quick Action Overlay Controls (top-left inside canvas, keeping bottom time axis 100% visible) */}
-        <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-slate-900/90 border border-slate-800 p-1 rounded-lg backdrop-blur-md z-20 shadow-lg">
-          <button
-            onClick={() => handleZoom('in')}
-            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-colors"
-            title="Zoom In (Scroll Up)"
-          >
-            <ZoomIn className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={() => handleZoom('out')}
-            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-colors"
-            title="Zoom Out (Scroll Down)"
-          >
-            <ZoomOut className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={handleResetView}
-            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-colors"
-            title="Reset to Latest View"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-          </button>
-
-          <div className="w-[1px] h-4 bg-slate-800 mx-0.5" />
-
-          {/* Layer toggles */}
-          <button
-            onClick={() => setRecentOnlyZones(!recentOnlyZones)}
-            className={`px-2 py-1 text-[10px] font-medium rounded transition-colors ${
-              recentOnlyZones ? 'bg-sky-950/80 text-sky-300 border border-sky-800/60 font-semibold' : 'text-slate-500 hover:text-slate-300'
-            }`}
-            title={recentOnlyZones ? "Showing strictly the single most recent active Demand and Supply zone" : "Showing all historical detected zones"}
-          >
-            {recentOnlyZones ? '⚡ Recent (1 D / 1 S)' : 'All Historical'}
-          </button>
-          <button
-            onClick={() => setShowDemand(!showDemand)}
-            className={`px-2 py-1 text-[10px] font-medium rounded transition-colors ${
-              showDemand ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-800/60' : 'text-slate-500 hover:text-slate-300'
-            }`}
-          >
-            Demand Zones
-          </button>
-          <button
-            onClick={() => setShowSupply(!showSupply)}
-            className={`px-2 py-1 text-[10px] font-medium rounded transition-colors ${
-              showSupply ? 'bg-rose-950/80 text-rose-300 border border-rose-800/60' : 'text-slate-500 hover:text-slate-300'
-            }`}
-          >
-            Supply Zones
-          </button>
-          <button
-            onClick={() => setShowMitigated(!showMitigated)}
-            className={`hidden sm:inline-block px-2 py-1 text-[10px] font-medium rounded transition-colors ${
-              showMitigated ? 'bg-indigo-950/80 text-indigo-300 border border-indigo-800/60' : 'text-slate-500 hover:text-slate-300'
-            }`}
-          >
-            Mitigated Zones
-          </button>
-          <button
-            onClick={() => setShowVwap(!showVwap)}
-            className={`px-2 py-1 text-[10px] font-medium rounded transition-colors ${
-              showVwap ? 'bg-amber-950/80 text-amber-300 border border-amber-800/60 font-semibold' : 'text-slate-500 hover:text-slate-300'
-            }`}
-            title="Toggle Session VWAP with ±1σ / ±2σ Standard Deviation Bands"
-          >
-            ⚡ VWAP (±2σ)
-          </button>
-          <button
-            onClick={() => setShowAtrBands(!showAtrBands)}
-            className={`hidden md:inline-block px-2 py-1 text-[10px] font-medium rounded transition-colors ${
-              showAtrBands ? 'bg-sky-950/80 text-sky-300 border border-sky-800/60' : 'text-slate-500 hover:text-slate-300'
-            }`}
-          >
-            ATR Volatility Bands
-          </button>
-          <button
-            onClick={() => setShowTradeSetup(!showTradeSetup)}
-            className={`px-2 py-1 text-[10px] font-medium rounded transition-colors ${
-              showTradeSetup ? 'bg-cyan-950/80 text-cyan-300 border border-cyan-800/60' : 'text-slate-500 hover:text-slate-300'
-            }`}
-          >
-            Trade Targets
-          </button>
-        </div>
       </div>
 
-      {/* 3. Dedicated Persistent Bottom Time & Terminal Bar (ALWAYS VISIBLE AT THE BOTTOM) */}
-      <div className="w-full bg-[#080C14] border-t border-slate-800/90 px-3 py-2 flex flex-wrap items-center justify-between gap-y-2 text-xs font-mono z-20 shrink-0 select-none">
-        {/* Left: Active / Hovered Candle Datetime & Stats (Always visible!) */}
-        <div className="flex items-center gap-3">
+      {/* 3. Dedicated Persistent Bottom Time & Terminal Bar (Single-line compressed on mobile) */}
+      <div className="w-full bg-[#080C14] border-t border-slate-800/90 px-2 sm:px-3 py-1 sm:py-2 flex flex-nowrap items-center justify-between gap-2 overflow-x-auto no-scrollbar text-[10px] md:text-xs font-mono z-20 shrink-0 select-none">
+        {/* Left: Active / Hovered Candle Datetime & Stats */}
+        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0 whitespace-nowrap">
           {hoveredCandle ? (
-            <div className="flex items-center gap-2 text-slate-300">
-              <span className="flex h-2 w-2 relative">
+            <div className="flex items-center gap-1.5 sm:gap-2 text-slate-300">
+              <span className="flex h-1.5 w-1.5 sm:h-2 sm:w-2 relative">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-sky-500"></span>
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 sm:h-2 sm:w-2 bg-sky-500"></span>
               </span>
-              <span className="text-slate-400 font-medium">Bar Time:</span>
+              <span className="text-slate-400 font-medium hidden sm:inline">Bar Time:</span>
               <span className="text-sky-300 font-bold tracking-tight">
-                {formatTimeWithZone(hoveredCandle.time || Date.parse(hoveredCandle.dateStr) || Date.now(), tzMode, hourShift).fullDisplay}
+                {formatTimeWithZone(hoveredCandle.time || Date.parse(hoveredCandle.dateStr) || Date.now(), tzMode, hourShift).axisLabel}
               </span>
               <span className="text-slate-600">|</span>
-              <span className="text-slate-400">O: <span className="text-slate-200">{hoveredCandle.open.toFixed(2)}</span></span>
-              <span className="text-slate-400">H: <span className="text-slate-200">{hoveredCandle.high.toFixed(2)}</span></span>
-              <span className="text-slate-400">L: <span className="text-slate-200">{hoveredCandle.low.toFixed(2)}</span></span>
-              <span className="text-slate-400">C: <span className={hoveredCandle.close >= hoveredCandle.open ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>{hoveredCandle.close.toFixed(2)}</span></span>
+              <span className="text-slate-400">C: <span className={hoveredCandle.close >= hoveredCandle.open ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>${hoveredCandle.close.toFixed(2)}</span></span>
+              <span className="text-slate-500 hidden md:inline">O: {hoveredCandle.open.toFixed(2)}</span>
+              <span className="text-slate-500 hidden md:inline">H: {hoveredCandle.high.toFixed(2)}</span>
+              <span className="text-slate-500 hidden md:inline">L: {hoveredCandle.low.toFixed(2)}</span>
               <span className="text-slate-500 hidden xl:inline">· Vol {hoveredCandle.volume.toLocaleString()}</span>
             </div>
           ) : (
-            <div className="flex items-center gap-2 text-slate-300">
-              <Clock className="w-3.5 h-3.5 text-sky-400" />
-              <span className="text-slate-400 font-medium">Latest Bar:</span>
+            <div className="flex items-center gap-1.5 sm:gap-2 text-slate-300">
+              <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-sky-400" />
+              <span className="text-slate-400 font-medium hidden sm:inline">Latest Bar:</span>
               <span className="text-slate-100 font-bold tracking-tight">
                 {currentCandle
-                  ? formatTimeWithZone(currentCandle.time || Date.parse(currentCandle.dateStr) || Date.now(), tzMode, hourShift).fullDisplay
+                  ? formatTimeWithZone(currentCandle.time || Date.parse(currentCandle.dateStr) || Date.now(), tzMode, hourShift).axisLabel
                   : 'Awaiting feed...'}
               </span>
               {currentCandle && (
                 <>
                   <span className="text-slate-600">|</span>
                   <span className="text-slate-400">Close: <span className="text-emerald-400 font-semibold">${currentCandle.close.toFixed(2)}</span></span>
-                  <span className="text-slate-500 hidden sm:inline">(Hover canvas for bar time)</span>
                 </>
               )}
             </div>
@@ -1424,25 +1423,25 @@ export const CandleChart: React.FC<CandleChartProps> = ({
         </div>
 
         {/* Center: Live Real-Time Wall Clock, Active Frequency & Session */}
-        <div className="hidden md:flex items-center gap-2.5 px-2.5 py-1 rounded bg-slate-900/90 border border-slate-800 text-[11px]">
+        <div className="hidden md:flex items-center gap-2 px-2 py-0.5 rounded bg-slate-900/90 border border-slate-800 text-[10px] shrink-0 whitespace-nowrap">
           <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-950/70 border border-sky-800/60 text-[10px] text-sky-300 font-bold">
             {frequency === 1 ? '⚡ 1m Scalp' : frequency === 5 ? '🔥 5m Intraday' : frequency === 15 ? '15m Day' : frequency === 30 ? '30m Tactical' : frequency === 60 ? '1H Swing' : frequency === 240 ? '4H Trend' : '1D Daily'}
           </span>
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="text-slate-400">Live Clock:</span>
+          <span className="text-slate-400">Clock:</span>
           <span className="text-emerald-300 font-bold tracking-wider">{liveClockFormatted}</span>
           <span className="text-slate-500 font-medium">({tzMode}{hourShift !== 0 ? (hourShift > 0 ? `+${hourShift}h` : `${hourShift}h`) : ''})</span>
         </div>
 
         {/* Right: Timezone Mode & Hour Shift Controls */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0 whitespace-nowrap">
           {/* Timezone Selector Buttons */}
-          <div className="flex items-center bg-slate-900 border border-slate-800 rounded p-0.5 text-[10px]">
+          <div className="flex items-center bg-slate-900 border border-slate-800 rounded p-0.5 text-[9px] sm:text-[10px]">
             {(['ET', 'CT', 'LOCAL', 'UTC'] as TimezoneMode[]).map(tz => (
               <button
                 key={tz}
                 onClick={() => handleSetTzMode(tz)}
-                className={`px-2 py-0.5 rounded font-semibold transition-all cursor-pointer ${
+                className={`px-1.5 sm:px-2 py-0.5 rounded font-semibold transition-all cursor-pointer ${
                   tzMode === tz
                     ? 'bg-sky-600 text-white shadow-sm'
                     : 'text-slate-400 hover:text-slate-200'
@@ -1459,7 +1458,7 @@ export const CandleChart: React.FC<CandleChartProps> = ({
           </div>
 
           {/* Hour Shift Adjustment Controls */}
-          <div className="flex items-center bg-slate-900 border border-slate-800 rounded p-0.5 text-[10px]" title="Shift time scale by ±1 hour to adjust for timezone, futures exchange, or broker difference">
+          <div className="hidden sm:flex items-center bg-slate-900 border border-slate-800 rounded p-0.5 text-[9px] sm:text-[10px]" title="Shift time scale by ±1 hour to adjust for timezone, futures exchange, or broker difference">
             <button
               onClick={() => handleSetHourShift(-1)}
               className="px-1.5 py-0.5 text-slate-400 hover:text-sky-300 hover:bg-slate-800 rounded transition-colors font-mono font-bold cursor-pointer"
@@ -1467,7 +1466,7 @@ export const CandleChart: React.FC<CandleChartProps> = ({
             >
               -1h
             </button>
-            <span className={`px-1.5 py-0.5 font-mono text-[10px] ${hourShift !== 0 ? 'text-amber-400 font-bold' : 'text-slate-500'}`}>
+            <span className={`px-1.5 py-0.5 font-mono text-[9px] sm:text-[10px] ${hourShift !== 0 ? 'text-amber-400 font-bold' : 'text-slate-500'}`}>
               {hourShift === 0 ? '0h' : hourShift > 0 ? `+${hourShift}h` : `${hourShift}h`}
             </span>
             <button

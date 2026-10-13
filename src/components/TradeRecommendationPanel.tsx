@@ -614,7 +614,7 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
             setViewMode('options');
             setCardModeMap({});
           }}
-          className={`flex-1 py-1.5 px-2 rounded transition-colors flex items-center justify-center gap-1.5 font-semibold ${
+          className={`flex-1 min-h-[44px] py-1.5 px-2 rounded transition-colors flex items-center justify-center gap-1.5 font-semibold cursor-pointer ${
             viewMode === 'options'
               ? 'bg-sky-600 text-white shadow-sm'
               : 'text-slate-400 hover:text-slate-200'
@@ -629,7 +629,7 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
             setViewMode('shares');
             setCardModeMap({});
           }}
-          className={`flex-1 py-1.5 px-2 rounded transition-colors flex items-center justify-center gap-1.5 font-medium ${
+          className={`flex-1 min-h-[44px] py-1.5 px-2 rounded transition-colors flex items-center justify-center gap-1.5 font-medium cursor-pointer ${
             viewMode === 'shares'
               ? 'bg-slate-800 text-white shadow-sm'
               : 'text-slate-400 hover:text-slate-200'
@@ -1188,7 +1188,7 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                     <button
                       type="button"
                       onClick={(e) => handleCopyOrder(dynamicCompoundTosOptionCommand, `compound-${optionPlay.id}`, e)}
-                      className="w-full py-2.5 px-4 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs flex items-center justify-center gap-2 transition-all font-semibold cursor-pointer shadow-md shadow-sky-950/50 hover:shadow-sky-900/60 active:scale-[0.99]"
+                      className="w-full min-h-[44px] py-2.5 px-4 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs flex items-center justify-center gap-2 transition-all font-semibold cursor-pointer shadow-md shadow-sky-950/50 hover:shadow-sky-900/60 active:scale-[0.99]"
                       title="Copies calculated theoretical bracket. Verify chain in TOS."
                     >
                       {copiedId === `compound-${optionPlay.id}` ? (
@@ -1218,7 +1218,7 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                       <button
                         type="button"
                         onClick={(e) => handleCopyOrder(dynamicNaturalTosCommand, `natural-${optionPlay.id}`, e)}
-                        className="hover:text-sky-300 transition-colors cursor-pointer"
+                        className="min-h-[44px] px-2 py-1 flex items-center hover:text-sky-300 transition-colors cursor-pointer"
                         title="Copies calculated theoretical bracket. Verify chain in TOS."
                       >
                         {copiedId === `natural-${optionPlay.id}` ? '✓ Copied Entry' : 'Entry Leg Only'}
@@ -1227,7 +1227,7 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                       <button
                         type="button"
                         onClick={(e) => handleCopyOrder(optionPlay.schwabWebSummary, `summary-${optionPlay.id}`, e)}
-                        className="hover:text-emerald-300 transition-colors cursor-pointer"
+                        className="min-h-[44px] px-2 py-1 flex items-center hover:text-emerald-300 transition-colors cursor-pointer"
                         title="Copies calculated theoretical bracket. Verify chain in TOS."
                       >
                         {copiedId === `summary-${optionPlay.id}` ? '✓ Copied Ticket' : 'Schwab Portal Ticket'}
@@ -1375,7 +1375,7 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                     <button
                       type="button"
                       onClick={(e) => handleCopyOrder(dynamicCompoundStockOrFuturesCommand, `stock-cmd-${rec.id}`, e)}
-                      className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs flex items-center justify-center gap-2 transition-all font-semibold cursor-pointer shadow-md shadow-emerald-950/50 hover:shadow-emerald-900/60 active:scale-[0.99]"
+                      className="w-full min-h-[44px] py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs flex items-center justify-center gap-2 transition-all font-semibold cursor-pointer shadow-md shadow-emerald-950/50 hover:shadow-emerald-900/60 active:scale-[0.99]"
                       title="Copy complete 1st Triggers OCO compound bracket order (Parent Entry + Child Stop Loss + Child Take Profit) so ThinkorSwim pastes all 3 legs simultaneously"
                     >
                       {copiedId === `stock-cmd-${rec.id}` ? (
@@ -1397,7 +1397,7 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                       <button
                         type="button"
                         onClick={(e) => handleCopyOrder(dynamicStockTosCommand, `stock-entry-${rec.id}`, e)}
-                        className="hover:text-emerald-300 transition-colors cursor-pointer"
+                        className="min-h-[44px] px-2 py-1 flex items-center hover:text-emerald-300 transition-colors cursor-pointer"
                         title="Copy entry leg only: BUY +N..."
                       >
                         {copiedId === `stock-entry-${rec.id}` ? '✓ Copied Entry' : 'Entry Leg Only'}
@@ -1406,7 +1406,7 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                       <button
                         type="button"
                         onClick={(e) => handleCopyOrder(dynamicStockSchwabSummary, `stock-schwab-${rec.id}`, e)}
-                        className="hover:text-emerald-300 transition-colors cursor-pointer"
+                        className="min-h-[44px] px-2 py-1 flex items-center hover:text-emerald-300 transition-colors cursor-pointer"
                         title="Copy complete ticket for Charles Schwab portal"
                       >
                         {copiedId === `stock-schwab-${rec.id}` ? '✓ Copied Ticket' : 'Schwab Portal Ticket'}
