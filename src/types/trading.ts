@@ -1,6 +1,6 @@
 export interface Candle {
-  time: number;          // timestamp in milliseconds
-  dateStr: string;       // formatted date/time
+  time: number;
+  dateStr: string;
   open: number;
   high: number;
   low: number;
@@ -10,66 +10,66 @@ export interface Candle {
 
 export type ZoneType = 'demand' | 'supply';
 
-export type ZonePattern = 
-  | 'DBR' // Drop-Base-Rally (Reversal Demand)
-  | 'RBR' // Rally-Base-Rally (Continuation Demand)
-  | 'RBD' // Rally-Base-Drop (Reversal Supply)
-  | 'DBD'; // Drop-Base-Drop (Continuation Supply)
+export type ZonePattern =
+  | 'DBR'
+  | 'RBR'
+  | 'RBD'
+  | 'DBD';
 
 export type ZoneStatus = 'fresh' | 'tested' | 'weakened' | 'mitigated';
 
-export type ProximityPhase = 
-  | 'Phase A: Staging (1.0–1.5x ATR)' 
-  | 'Phase B: Zone Touch (Execute)' 
-  | 'Phase C: In-Play (3-Bar Rule)' 
+export type ProximityPhase =
+  | 'Phase A: Staging (1.0–1.5x ATR)'
+  | 'Phase B: Zone Touch (Execute)'
+  | 'Phase C: In-Play (3-Bar Rule)'
   | 'Dormant (>1.5x ATR)';
 
 export interface SupplyDemandZone {
   id: string;
   type: ZoneType;
   pattern: ZonePattern;
-  high: number;           // Upper boundary
-  low: number;            // Lower boundary
-  equilibrium: number;    // 50% midpoint
-  proximalLine: number;   // Outer boundary facing market price (Entry level)
-  distalLine: number;     // Inner boundary away from market price (Hard stop anchor)
-  startIndex: number;     // Index in candle array where base was formed
-  endIndex: number;       // Index where explosive impulse started
+  high: number;
+  low: number;
+  equilibrium: number;
+  proximalLine: number;
+  distalLine: number;
+  startIndex: number;
+  endIndex: number;
   startTime: number;
-  departureVelocity: number; // Multiplier of ATR (>= 1.5x required)
-  departurePercent: number;  // % price moved away in impulse
-  strengthScore: number;  // 0 - 100 quality score
-  testedCount: number;    // How many times price tested this zone
-  isDepleted: boolean;    // >= 2 tests means high breakout risk
-  isMitigated: boolean;   // True if candle closed through or breached distal
+  departureVelocity: number;
+  departurePercent: number;
+  strengthScore: number;
+  testedCount: number;
+  isDepleted: boolean;
+  isMitigated: boolean;
   mitigatedIndex?: number;
   mitigatedTime?: number;
-  volatilityAtCreation: number; // ATR at the time zone was detected
-  baseLength: number;     // Number of candles in base (1-4 max)
-  volumeImbalanceRatio?: number; // Multiple of 20-period avg volume on departure (>= 1.3x)
+  volatilityAtCreation: number;
+  baseLength: number;
+  volumeImbalanceRatio?: number;
   trendConfluence?: 'pro-trend' | 'counter-trend' | 'neutral';
-  conservativeEntry?: number; // 50% zone equilibrium level for enhanced 4:1+ R:R
-  confluenceTags?: string[]; // e.g. ['Pro-Trend 20/50 EMA', 'Fresh 0-Test', 'Wholesale Volume Imbalance']
+  conservativeEntry?: number;
+  confluenceTags?: string[];
   vwapConfluence?: { scoreBonus: number; tag: string };
-  vwapAtFormation?: number; // Active session VWAP stamped at base formation
-  heuristicQualityScore?: number; // Transparent 0-100 quality score
-  barAge?: number;        // Age in candles since zone formation
+  vwapAtFormation?: number;
+  heuristicQualityScore?: number;
+  barAge?: number;
   proximityPhase?: ProximityPhase;
   distanceInAtr?: number;
-  isRecentPrimary?: boolean; // True for the single most recent active zone of this type
+  isRecentPrimary?: boolean;
   notes: string;
 }
 
 export interface VolatilityMetrics {
   atr: number;
   atrPercent: number;
-  annualizedHV: number; // Historical Volatility (standard deviation of log returns * sqrt(252))
+  annualizedHV: number;
   bbUpper: number;
   bbMiddle: number;
   bbLower: number;
-  bbWidth: number; // (Upper - Lower) / Middle * 100
+  bbWidth: number;
   regime: 'Compression (Squeeze)' | 'Normal' | 'Expansion (High Volatility)' | 'Extreme Impulse';
-  recommendedBufferMultiplier: number; // 1.2 to 1.8x ATR (default 1.35x)
+  recommendedBufferMultiplier: number;
 }
 
 export interface TradeRecommendation {
@@ -79,33 +79,35 @@ export interface TradeRecommendation {
   side: 'long' | 'short';
   zoneType: ZoneType;
   pattern: ZonePattern;
-  entry: number;           // Aggressive Proximal Line Entry
-  conservativeEntry: number; // Conservative 50% Midline Equilibrium Entry
+  entry: number;
+  conservativeEntry: number;
   entryType: 'Zone Boundary' | '50% Equilibrium';
-  stopLoss: number;        // Distal Line ± 1.35x ATR
-  bufferAtrMultiplier: number; // Default 1.35x
+  stopLoss: number;
+  bufferAtrMultiplier: number;
   bufferAmount: number;
-  takeProfit1: number;     // 1:2 R:R (de-risk partials)
-  takeProfit2: number;     // Opposing Structural Zone Proximal Line (1:3 to 1:4.5 R:R)
-  takeProfit3: number;     // Extended runner
+  takeProfit1: number;
+  takeProfit2: number;
+  takeProfit3: number;
   riskPerUnit: number;
   rewardPerUnit1: number;
   rewardPerUnit2: number;
   rewardPerUnit3: number;
   riskRewardRatio: number;
   status: 'active' | 'triggered' | 'won' | 'stopped_out' | 'invalidated';
-  heuristicQualityScore: number; // Transparent 0-100 quality score (Freshness + Velocity + Volume + VWAP)
-  qualityScore: number; // Kept for interface backward compatibility
+  heuristicQualityScore: number;
+  qualityScore: number;
   rationale: string;
   currentDistancePercent: number;
   distanceInAtr?: number;
   proximityPhase?: ProximityPhase;
   opposingZoneId?: string;
   vwapConfluence?: { scoreBonus: number; tag: string };
+  /** fresh = recent-only zones; historical-fallback = relaxation path */
+  recommendationSource?: 'fresh' | 'historical-fallback';
 }
 
 export interface BacktestConfig {
-  startDate: string; // YYYY-MM-DD or ISO
+  startDate: string;
   endDate: string;
   initialBalance: number;
   riskPercent: number;
@@ -114,6 +116,7 @@ export interface BacktestConfig {
   minQualityScore: number;
   sideFilter: 'all' | 'long' | 'short';
   freshOnly: boolean;
+  dataSource?: string;
 }
 
 export interface EquityPoint {
@@ -143,7 +146,7 @@ export interface BacktestTrade {
   bufferAmount: number;
   side: 'long' | 'short';
   outcome: 'tp1' | 'tp2' | 'tp3' | 'sl' | 'open';
-  rMultiple: number; // e.g. +2.0, +3.0, -1.0
+  rMultiple: number;
   pnlPercent: number;
   pnlDollar: number;
   balanceAfter: number;
@@ -164,7 +167,7 @@ export interface BacktestSummary {
   wins: number;
   losses: number;
   openTrades: number;
-  winRate: number; // 0 - 100%
+  winRate: number;
   profitFactor: number;
   avgRMultiple: number;
   maxDrawdownDollar: number;
@@ -237,9 +240,9 @@ export interface JournalTrade {
   dateStr: string;
   symbol: string;
   side: 'long' | 'short';
-  zoneId: string; // Specific supply/demand zone ID
+  zoneId: string;
   zoneType: ZoneType;
-  pattern: ZonePattern; // 'DBR' | 'RBR' | 'RBD' | 'DBD'
+  pattern: ZonePattern;
   instrumentType: 'OPTION' | 'STOCK' | 'FUTURE';
   optionSymbol?: string;
   strike?: number;
@@ -251,9 +254,9 @@ export interface JournalTrade {
   exitPrice?: number;
   exitDateStr?: string;
   outcome: JournalOutcome;
-  rMultiple: number; // e.g. +3.0R or -1.0R
-  pnlDollar: number; // Dollar profit or loss
-  pnlPercent: number; // Percentage gain/loss
+  rMultiple: number;
+  pnlDollar: number;
+  pnlPercent: number;
   qualityScore: number;
   executionSource: 'Schwab Portal' | 'thinkorswim' | 'Simulated' | 'Manual';
   notes?: string;
@@ -266,7 +269,7 @@ export interface PatternPerformance {
   wins: number;
   losses: number;
   openTrades: number;
-  winRate: number; // 0 - 100%
+  winRate: number;
   totalPnLDollar: number;
   profitFactor: number;
   avgRMultiple: number;
@@ -286,7 +289,7 @@ export interface MonitoredOpportunity {
   changePercent: number;
   status: MonitorTriggerStatus;
   signalType: 'CALL / LONG' | 'PUT / SHORT' | 'NEUTRAL';
-  triggerAction: string; // e.g. "BUY 575 CALL" or "SELL FUTURE /MES"
+  triggerAction: string;
   nearestZone?: SupplyDemandZone;
   distancePercent: number;
   distanceDollars: number;
@@ -321,6 +324,3 @@ export interface OpportunityAlert {
   targetPrice: number;
   rMultiple: number;
 }
-
-
-
