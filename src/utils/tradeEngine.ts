@@ -61,13 +61,16 @@ export function generateTradeRecommendations(
   const bufferAmount = atr * bufferMultiplier;
 
   const activeDemandZones = zones
-    .filter(z =>
-      z.type === 'demand' &&
-      !z.isMitigated &&
-      z.testedCount <= 2 &&
-      !(currentPrice < z.low - 0.2 * atr) &&
-      z.high <= currentPrice * 1.06
-    )
+    .filter(z => {
+      if (z.type !== 'demand' || z.isMitigated || z.testedCount > 2) return false;
+      // Invalidate if price has broken through zone distal floor
+      if (currentPrice < z.low - 0.2 * atr) return false;
+      // Proximity Gating: Allow staging when spot price is within 3.5x ATR of zone proximal line
+      const proximal = z.proximalLine || z.high;
+      const distToProximal = Math.max(0, currentPrice - proximal);
+      const distInAtr = distToProximal / Math.max(0.0001, atr);
+      return distInAtr <= 3.5;
+    })
     .sort((a, b) => {
       const distA = Math.abs(currentPrice - a.high);
       const distB = Math.abs(currentPrice - b.high);
@@ -78,13 +81,16 @@ export function generateTradeRecommendations(
     });
 
   const activeSupplyZones = zones
-    .filter(z =>
-      z.type === 'supply' &&
-      !z.isMitigated &&
-      z.testedCount <= 2 &&
-      !(currentPrice > z.high + 0.2 * atr) &&
-      z.low >= currentPrice * 0.94
-    )
+    .filter(z => {
+      if (z.type !== 'supply' || z.isMitigated || z.testedCount > 2) return false;
+      // Invalidate if price has broken through zone distal ceiling
+      if (currentPrice > z.high + 0.2 * atr) return false;
+      // Proximity Gating: Allow staging when spot price is within 3.5x ATR of zone proximal line
+      const proximal = z.proximalLine || z.low;
+      const distToProximal = Math.max(0, proximal - currentPrice);
+      const distInAtr = distToProximal / Math.max(0.0001, atr);
+      return distInAtr <= 3.5;
+    })
     .sort((a, b) => {
       const distA = Math.abs(a.low - currentPrice);
       const distB = Math.abs(b.low - currentPrice);
@@ -109,10 +115,30 @@ export function generateTradeRecommendations(
     const tp3 = entry + riskPerUnit * 4.5;
 
     const distancePercent = ((currentPrice - entry) / currentPrice) * 100;
-    const tags = zone.confluenceTags && zone.confluenceTags.length > 0 ? zone.confluenceTags.join(' · ') : 'Standard Imbalance';
     const heuristicQualityScore =
       zone.heuristicQualityScore ??
       calculateHeuristicQualityScore(zone, volatilityMetrics, dataSource);
+
+    const distToProximal = Math.abs(currentPrice - entry);
+    const distanceInAtr = Number((distToProximal / Math.max(0.0001, atr)).toFixed(2));
+
+    // Touch check: Spot price touches or penetrates proximal plane without breaking distal stop loss
+    const touchesProximal = currentPrice <= (entry + 0.15 * atr) && currentPrice >= (zone.low - 0.2 * atr);
+    const isQualityEligible = heuristicQualityScore >= 60;
+    const isRejectionMode = touchesProximal && isQualityEligible;
+    const executionMode = isRejectionMode ? 'Execution Mode: Rejection Confirmation' : undefined;
+
+    let proximityPhase: import('../types/trading').ProximityPhase = zone.proximityPhase || 'Dormant (>1.5x ATR)';
+    if (touchesProximal) {
+      proximityPhase = 'Phase B: Zone Touch (Execute)';
+    } else if (distanceInAtr <= 1.5) {
+      proximityPhase = 'Phase A: Staging (1.0–1.5x ATR)';
+    } else {
+      proximityPhase = 'Phase A: Staging (1.0–1.5x ATR)';
+    }
+
+    const baseTags = zone.confluenceTags && zone.confluenceTags.length > 0 ? zone.confluenceTags.join(' · ') : 'Standard Imbalance';
+    const tags = isRejectionMode ? `${baseTags} · Execution Mode: Rejection Confirmation` : baseTags;
 
     recommendations.push({
       id: `rec-long-${zone.id}`,
@@ -123,7 +149,8 @@ export function generateTradeRecommendations(
       pattern: zone.pattern,
       entry,
       conservativeEntry,
-      entryType: 'Zone Boundary',
+      entryType: isRejectionMode ? 'Rejection Confirmation' : 'Zone Boundary',
+      executionMode,
       stopLoss,
       bufferAtrMultiplier: bufferMultiplier,
       bufferAmount,
@@ -138,8 +165,8 @@ export function generateTradeRecommendations(
       status: 'active',
       heuristicQualityScore,
       qualityScore: heuristicQualityScore,
-      proximityPhase: zone.proximityPhase || 'Dormant (>1.5x ATR)',
-      distanceInAtr: zone.distanceInAtr,
+      proximityPhase,
+      distanceInAtr,
       opposingZoneId: overheadSupply?.id,
       vwapConfluence: zone.vwapConfluence,
       recommendationSource,
@@ -163,10 +190,30 @@ export function generateTradeRecommendations(
     const tp3 = entry - riskPerUnit * 4.5;
 
     const distancePercent = ((entry - currentPrice) / currentPrice) * 100;
-    const tags = zone.confluenceTags && zone.confluenceTags.length > 0 ? zone.confluenceTags.join(' · ') : 'Standard Imbalance';
     const heuristicQualityScore =
       zone.heuristicQualityScore ??
       calculateHeuristicQualityScore(zone, volatilityMetrics, dataSource);
+
+    const distToProximal = Math.abs(entry - currentPrice);
+    const distanceInAtr = Number((distToProximal / Math.max(0.0001, atr)).toFixed(2));
+
+    // Touch check: Spot price touches or penetrates proximal plane without breaking distal stop loss
+    const touchesProximal = currentPrice >= (entry - 0.15 * atr) && currentPrice <= (zone.high + 0.2 * atr);
+    const isQualityEligible = heuristicQualityScore >= 60;
+    const isRejectionMode = touchesProximal && isQualityEligible;
+    const executionMode = isRejectionMode ? 'Execution Mode: Rejection Confirmation' : undefined;
+
+    let proximityPhase: import('../types/trading').ProximityPhase = zone.proximityPhase || 'Dormant (>1.5x ATR)';
+    if (touchesProximal) {
+      proximityPhase = 'Phase B: Zone Touch (Execute)';
+    } else if (distanceInAtr <= 1.5) {
+      proximityPhase = 'Phase A: Staging (1.0–1.5x ATR)';
+    } else {
+      proximityPhase = 'Phase A: Staging (1.0–1.5x ATR)';
+    }
+
+    const baseTags = zone.confluenceTags && zone.confluenceTags.length > 0 ? zone.confluenceTags.join(' · ') : 'Standard Imbalance';
+    const tags = isRejectionMode ? `${baseTags} · Execution Mode: Rejection Confirmation` : baseTags;
 
     recommendations.push({
       id: `rec-short-${zone.id}`,
@@ -177,7 +224,8 @@ export function generateTradeRecommendations(
       pattern: zone.pattern,
       entry,
       conservativeEntry,
-      entryType: 'Zone Boundary',
+      entryType: isRejectionMode ? 'Rejection Confirmation' : 'Zone Boundary',
+      executionMode,
       stopLoss,
       bufferAtrMultiplier: bufferMultiplier,
       bufferAmount,
@@ -192,8 +240,8 @@ export function generateTradeRecommendations(
       status: 'active',
       heuristicQualityScore,
       qualityScore: heuristicQualityScore,
-      proximityPhase: zone.proximityPhase || 'Dormant (>1.5x ATR)',
-      distanceInAtr: zone.distanceInAtr,
+      proximityPhase,
+      distanceInAtr,
       opposingZoneId: lowerDemand?.id,
       vwapConfluence: zone.vwapConfluence,
       recommendationSource,
@@ -587,6 +635,9 @@ export function calculatePositionSize(
   symbol: string
 ): {
   units: number;
+  contracts: number;
+  riskAmount: number;
+  notional: number;
   riskPerUnit: number;
   riskBudget: number;
   riskPerContract: number;
@@ -601,10 +652,16 @@ export function calculatePositionSize(
   const pointValue = getContractPointValue(symbol);
   const riskPerContract = riskPerUnit * pointValue;
   const units = riskPerContract > 0 ? Math.max(1, Math.floor(riskBudget / riskPerContract)) : 1;
+  const contracts = isFutures ? units : 0;
+  const riskAmount = isFutures ? (units * riskPerContract) : (units * riskPerUnit);
+  const notional = isFutures ? (units * entry * pointValue) : (units * entry);
   const commission = isFutures ? 2.5 : 0;
   const isMes = symbol.toUpperCase().includes('MES');
   return {
     units,
+    contracts,
+    riskAmount,
+    notional,
     riskPerUnit,
     riskBudget,
     riskPerContract,

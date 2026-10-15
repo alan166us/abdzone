@@ -35,10 +35,10 @@ export function detectSupplyDemandZones(
   const {
     atrPeriod = 14,
     minImpulseMultiplier = 1.20,
-    maxBaseCandles = 3,
+    maxBaseCandles = 5,
     useWickForBoundary = true,
     recentOnly = true,
-    maxRecentZonesPerType = 1,
+    maxRecentZonesPerType = 3,
     includeMitigated = false,
     dataSource,
   } = options;
@@ -76,7 +76,7 @@ export function detectSupplyDemandZones(
 
     let baseStartIdx = -1;
     let baseEndIdx = impulseStartIdx - 1;
-    const effectiveMaxBaseCandles = Math.min(3, maxBaseCandles);
+    const effectiveMaxBaseCandles = Math.min(5, maxBaseCandles);
 
     for (let k = 0; k < effectiveMaxBaseCandles; k++) {
       const idx = baseEndIdx - k;
@@ -85,15 +85,15 @@ export function detectSupplyDemandZones(
       const currentAtr = atrs[idx] || atr;
       const bBody = Math.abs(bCandle.close - bCandle.open);
       const bRange = bCandle.high - bCandle.low;
-      const isIndecision = bRange > 0 ? (bBody / bRange) <= 0.45 : true;
-      const isTightRange = bBody <= (currentAtr * 0.50) && bRange <= (currentAtr * 0.85);
+      const isIndecision = bRange > 0 ? (bBody / bRange) <= 0.55 : true;
+      const isTightRange = bBody <= (currentAtr * 0.65) && bRange <= (currentAtr * 1.10);
       if (isIndecision || isTightRange) baseStartIdx = idx;
       else break;
     }
 
     if (baseStartIdx === -1) continue;
     const baseCandles = candles.slice(baseStartIdx, baseEndIdx + 1);
-    if (baseCandles.length === 0 || baseCandles.length > 3) continue;
+    if (baseCandles.length === 0 || baseCandles.length > effectiveMaxBaseCandles) continue;
 
     const volLookback = Math.min(20, baseStartIdx);
     let volSum = 0;

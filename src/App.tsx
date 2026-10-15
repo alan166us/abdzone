@@ -299,15 +299,15 @@ export default function App() {
   }, [candles, selectedAsset, customBufferMultiplier]);
 
   // 2. Automatically Detect Supply & Demand Zones:
-  // Strictly keep ONLY the single most recent active Demand & single most recent Supply zone
+  // Track top 3 freshest unmitigated Demand and top 3 freshest Supply zones
   const zones = useMemo(() => {
     return detectSupplyDemandZones(candles, {
       atrPeriod: 14,
       minImpulseMultiplier: 1.25,
-      maxBaseCandles: 3,
+      maxBaseCandles: 5,
       useWickForBoundary: true,
       recentOnly: true,
-      maxRecentZonesPerType: 1, // Strictly 1 recent demand and 1 recent supply zone
+      maxRecentZonesPerType: 3, // Multi-zone evaluation: top 3 demand and top 3 supply zones
       includeMitigated: false,
       dataSource: dataSourceInfo.mode,
     });
@@ -318,7 +318,7 @@ export default function App() {
     return detectSupplyDemandZones(candles, {
       atrPeriod: 14,
       minImpulseMultiplier: 1.25,
-      maxBaseCandles: 3,
+      maxBaseCandles: 5,
       useWickForBoundary: true,
       recentOnly: false,
       dataSource: dataSourceInfo.mode,

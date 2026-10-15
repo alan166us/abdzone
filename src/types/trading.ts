@@ -81,7 +81,7 @@ export interface TradeRecommendation {
   pattern: ZonePattern;
   entry: number;
   conservativeEntry: number;
-  entryType: 'Zone Boundary' | '50% Equilibrium';
+  entryType: 'Zone Boundary' | '50% Equilibrium' | 'Rejection Confirmation';
   stopLoss: number;
   bufferAtrMultiplier: number;
   bufferAmount: number;
@@ -104,6 +104,7 @@ export interface TradeRecommendation {
   vwapConfluence?: { scoreBonus: number; tag: string };
   /** fresh = recent-only zones; historical-fallback = relaxation path */
   recommendationSource?: 'fresh' | 'historical-fallback';
+  executionMode?: 'Execution Mode: Rejection Confirmation' | string;
 }
 
 export interface BacktestConfig {

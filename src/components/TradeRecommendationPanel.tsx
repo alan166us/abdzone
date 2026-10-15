@@ -647,7 +647,7 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
         const metrics = computeMetrics(rec, params);
         const isExpanded = !!expandedCalcMap[rec.id];
         const effectiveRec = getEffectiveRec(rec);
-        const isDormant = rec.proximityPhase?.includes('Dormant') || (rec.distanceInAtr !== undefined && rec.distanceInAtr > 1.5);
+        const isDormant = !rec.executionMode && (rec.proximityPhase?.includes('Dormant') || (rec.distanceInAtr !== undefined && rec.distanceInAtr > 1.5));
 
         const optionPlay: SchwabOptionContractRecommendation | null = generateSchwabOptionPlay(
           effectiveRec,
@@ -744,6 +744,11 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                 <span className="text-[11px] text-slate-400">
                   {isLong ? 'Demand Reversal' : 'Supply Reversal'}
                 </span>
+                {rec.executionMode && (
+                  <span className="px-2 py-0.5 rounded font-bold border border-emerald-500/80 bg-emerald-950/80 text-emerald-300 text-[10px] animate-pulse">
+                    Rejection Confirmation
+                  </span>
+                )}
               </div>
 
               <div className="flex items-center gap-2 text-[11px] font-mono text-slate-400">
@@ -821,6 +826,19 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                 <span className="text-emerald-400 font-semibold">{rec.qualityScore}% Score</span>
               </div>
             </div>
+
+            {/* Execution Mode: Rejection Confirmation Banner */}
+            {rec.executionMode && (
+              <div className="mb-2.5 px-2.5 py-1.5 rounded text-[11px] font-mono flex items-center justify-between border bg-emerald-950/80 border-emerald-400 text-emerald-200 shadow-md shadow-emerald-950/50">
+                <div className="flex items-center gap-2 font-bold">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
+                  <span className="tracking-wide">🎯 {rec.executionMode}</span>
+                </div>
+                <span className="text-[10px] font-bold text-emerald-300 bg-emerald-900/90 px-2 py-0.5 rounded border border-emerald-600/80 whitespace-nowrap">
+                  PROXIMAL TOUCH CONFIRMED
+                </span>
+              </div>
+            )}
 
             {/* Proximity Phase & Execution Reaction Window Banner */}
             {rec.proximityPhase && (

@@ -152,12 +152,12 @@ Keep the prose crisp, authoritative, formatted in clean Markdown, without market
     }
   });
 
-  // Real-Time Gemini AI Chat Stream API
-  app.post('/api/ai/chat', async (req, res) => {
+  // Real-Time Gemini AI Chat Stream API handler
+  const handleAiChatStream = async (req: express.Request, res: express.Response) => {
     const { 
       messages = [], 
       marketContext = {}, 
-      model = 'gemini-3.5-flash',
+      model = 'gemini-3.8-flash',
       role = 'daily_coach',
       languageStyle = 'daily'
     } = req.body;
@@ -178,29 +178,27 @@ Keep the prose crisp, authoritative, formatted in clean Markdown, without market
       chosenModel = 'gemini-3.8-flash';
     }
 
-    const rolePersonaPrompt = `You are the user's dedicated trading partner and options coach in the trenches together.
-Your mission is simple: build steady daily/weekly cashflow while protecting capital with strictly defined downside risk.
+    const conversationalPartnerInstruction = `You are the user's sharp, authentic, and grounded trading partner sitting right beside them at the desk. You share a passion for disciplined execution, building steady daily cashflow, and protecting hard-earned family capital.
 
-TONE & STYLE:
-- Speak in warm, authentic, clear, and encouraging conversational English (like two focused partners reviewing the desk together).
-- Zero robotic setups, stiff corporate jargon, or fake hype. Speak with humble confidence and candid clarity.
-- Ground every insight directly in live market numbers (Spot, ATR, Zone Boundaries).
-- Use clear, vivid, everyday analogies (wholesale sale vs retail chase, trampolines, giving trades breathing room).
-- Format responses cleanly with short paragraphs, bold key prices, and actionable bullet points.
+VOICE & PERSONALITY:
+- Talk like a real collaborator and trusted peer, not a textbook, customer service bot, or corporate manual.
+- High-energy, encouraging, candid, and direct. Validate good patience; call out risky habits with warmth and honesty.
+- Zero robotic introductions ("Based on the data provided...", "Here is an analysis..."). Dive straight into the meat with real talk.
+- Use natural, intuitive conversational analogies (e.g., "Price is hanging out in no-man's land right now—no need to force a trade," "Think of this demand zone like a trampoline floor," "Let the market come to our pitch").
+- Keep paragraphs punchy and readable. Use inline bolding for key price levels and strike numbers. Emojis can be used sparingly and naturally (🎯, 🛡️, 💡).
 
-CORE MENTAL MODELS:
-1. Daily Cashflow: Harvesting steady theta decay without getting greedy. Lock in 50% profit early and recycle capital.
-2. Capital Protection: Zero naked trades. Spread wings keep worst-case loss mathematically capped to the penny.
-3. Patient Execution: Never chase price in 'no-man's land'. Let the wholesale entry come to us or step aside.
-4. The 'Why' Behind the Levels: Always explain why the entry is wholesale, why the ATR buffer protects against liquidity sweeps, and where opposing walls sit.`;
+CORE PHILOSOPHY:
+- Protect Capital First: No chasing. If there's no edge, sitting on hands is a winning trade.
+- Defined Risk Always: We love credit spreads and defined brackets because worst-case loss is capped to the penny.
+- Transparent & Humble: Explain the "why" behind levels (VWAP, wholesale vs retail) simply and clearly. If the market is choppy, admit it freely.`;
 
-    let activePersona = rolePersonaPrompt;
+    let activePersona = conversationalPartnerInstruction;
     if (role === 'quant') {
-      activePersona = `${rolePersonaPrompt}\n\nSPECIALTY: Quant order flow focus, institutional supply/demand zone validation, volume ratios, and SMC patterns.`;
+      activePersona = `${conversationalPartnerInstruction}\n\nSPECIALTY: Quant order flow focus, institutional supply/demand zone validation, volume ratios, and SMC patterns.`;
     } else if (role === 'risk_architect' || chosenModel === 'gemini-3.1-pro-preview') {
-      activePersona = `${rolePersonaPrompt}\n\nSPECIALTY: Deep risk architect focus, expected value mathematics, and ATR stop-loss buffer discipline.`;
+      activePersona = `${conversationalPartnerInstruction}\n\nSPECIALTY: Deep risk architect focus, expected value mathematics, and ATR stop-loss buffer discipline.`;
     } else if (role === 'fast_scalp' || chosenModel === 'gemini-3.1-flash-lite') {
-      activePersona = `${rolePersonaPrompt}\n\nSPECIALTY: Fast execution focus, concise key levels, rapid trigger prices, and tight risk controls.`;
+      activePersona = `${conversationalPartnerInstruction}\n\nSPECIALTY: Fast execution focus, concise key levels, rapid trigger prices, and tight risk controls.`;
     }
 
     if (apiKey && apiKey !== 'MY_GEMINI_API_KEY') {
@@ -214,30 +212,27 @@ CORE MENTAL MODELS:
           },
         });
 
-        const systemInstruction = `You are StrataZone's interactive AI Trading Partner & Options Coach: ${activePersona} (Running on ${chosenModel}).
-You and the user are collaborating live at the trading desk in an interactive multi-turn conversation.
+        const systemInstruction = `${activePersona}
 
 LIVE MARKET SNAPSHOT:
 - Active Asset: ${marketContext?.symbol || 'Asset'} (${marketContext?.timeframe || '1H'})
 - Current Spot Price: $${marketContext?.currentPrice}
-- Average Bar Swing ATR(14): $${marketContext?.volatilityMetrics?.atr?.toFixed(2)} (${marketContext?.volatilityMetrics?.atrPercent?.toFixed(2)}%)
-- Volatility Regime: ${marketContext?.volatilityMetrics?.regime}
-- Stop-Loss Buffer Multiplier: ${marketContext?.volatilityMetrics?.recommendedBufferMultiplier?.toFixed(2)}x ATR
+- Average Bar Swing ATR(14): $${marketContext?.volatilityMetrics?.atr?.toFixed(2) || 'N/A'} (${marketContext?.volatilityMetrics?.atrPercent?.toFixed(2) || 'N/A'}%)
+- Volatility Regime: ${marketContext?.volatilityMetrics?.regime || 'Normal'}
+- Stop-Loss Buffer Multiplier: ${marketContext?.volatilityMetrics?.recommendedBufferMultiplier?.toFixed(2) || '1.35'}x ATR
 - Active Supply & Demand Zones:
 ${JSON.stringify(marketContext?.zones?.slice(0, 5) || [], null, 2)}
 - Active Recommendations:
 ${JSON.stringify(marketContext?.recommendations || [], null, 2)}
 
-CONVERSATIONAL GUIDELINES & DECISION-MAKING DISCUSSION:
-1. BE A REAL TRADING PARTNER, NOT A ROBOT: Talk like two experienced traders reviewing setups side-by-side. Answer whatever the user actually asks directly, naturally, and thoughtfully.
-2. NO RIGID BOILERPLATE TEMPLATES: NEVER dump a repetitive 4-part form or cookie-cutter headers (e.g. "1. Executive Bias, 2. Demand Efficacy...") unless the user explicitly requests a formal written report. Engage in dynamic conversational discourse!
-3. DEEPLY EXPLORE THE "WHY" BEHIND DECISIONS:
-   - Why this entry price: Contrast getting a wholesale discount at the institutional base vs retail chasing in "no-man's land" at current spot ($${marketContext?.currentPrice}).
-   - Why this stop-loss: Explain why the volatility cushion (${marketContext?.volatilityMetrics?.recommendedBufferMultiplier?.toFixed(2)}x ATR) prevents getting shaken out by institutional liquidity sweeps.
-   - Why these targets & the 50% rule: Explain why locking in 50% profit at TP1 creates a free-roll trade and why taking money off the table before overhead supply walls preserves expectancy.
-   - Invalidation criteria: Detail what specific price action tells us our thesis failed and when to step aside without regret.
-4. DEBATE TRADE-OFFS & SCENARIOS: If the user asks "Should I take this trade?" or "Why wait?", weigh the pros and cons openly (e.g. limit order vs market entry, defined-risk credit spread vs outright directional contract, tight stop vs breathing room).
-5. DIALOGUE CONTINUITY: Build on previous turns in the conversation. Ask for the user's perspective, validate their intuition, and guide them with sharp risk management.`;
+PARTNER COLLABORATION GUIDELINES:
+1. TALK LIKE A REAL PEER: We are sitting right beside each other watching the screen. Answer whatever the user asks with candid clarity, zero corporate filler.
+2. ZERO ROBOTIC BOILERPLATE: NEVER use stiff templates or repetitive headers like "1. Executive Bias" unless explicitly asked. Talk in conversational paragraphs and bullet points.
+3. DEEPLY EXPLORE THE "WHY":
+   - Why this entry: Contrast waiting for a wholesale discount at institutional demand vs retail chasing in "no-man's land" ($${marketContext?.currentPrice}).
+   - Why this stop-loss: Explain how the volatility cushion (${marketContext?.volatilityMetrics?.recommendedBufferMultiplier?.toFixed(2) || '1.35'}x ATR) prevents getting shaken out by institutional liquidity sweeps.
+   - Why profit targets & 50% rule: Explain locking in 50% profit at TP1 to create a stress-free runner and banking time decay.
+4. HONEST TRADE-OFFS: If the market is choppy or price is mid-range, explicitly advise sitting on hands. Preserving capital is a winning play.`;
 
         // Format multi-turn history
         const formattedHistory = messages.slice(0, -1).map((m: any) => ({
@@ -387,16 +382,16 @@ Which vehicle fits your account and comfort level best for this session?`;
 
     } else {
       // General thoughtful trading partner conversation
-      fallbackText = `Hey partner! Let's talk through the decision-making on ${symbol} together.
+      fallbackText = `Hey! Sitting right here beside you looking at **${symbol}**. 🎯
 
-Price is currently sitting at **$${price.toLocaleString()}**, swinging about **$${atr}** per bar.
+Price is currently at **$${price.toLocaleString()}**, swinging about **$${atr}** per bar.
 
-Here is how I am reading the desk right now:
-* **The Tug of War:** We have clear institutional footprints on this chart. ${freshDemand ? `Buyers established a solid order floor down around **$${freshDemand.low.toFixed(2)} – $${freshDemand.high.toFixed(2)}**.` : 'Support is holding the lower range.'} ${freshSupply ? `Meanwhile, sellers have an overhead ceiling parked near **$${freshSupply.low.toFixed(2)} – $${freshSupply.high.toFixed(2)}**.` : 'Overhead resistance is capping momentum.'}
-* **The Core Decision Rule:** We don't make impulsive bets in the middle of the range. We wait for price to either retrace to wholesale demand or push into wholesale supply where our risk is tiny and our edge is huge.
-${primaryRec ? `* **The Active Game Plan:** We are monitoring a **${primaryRec.side.toUpperCase()}** setup targeting an entry at **$${primaryRec.entry.toFixed(2)}** with a stop at **$${primaryRec.stopLoss.toFixed(2)}**.` : ''}
+Here is the honest read on the tape right now:
+* **The Battlefield:** We're caught in a tug-of-war. ${freshDemand ? `Buyers staked out a strong demand floor down around **$${freshDemand.low.toFixed(2)} – $${freshDemand.high.toFixed(2)}** (like an elastic trampoline).` : 'Support is holding the lower range.'} ${freshSupply ? `Sellers have a supply ceiling clamped above near **$${freshSupply.low.toFixed(2)} – $${freshSupply.high.toFixed(2)}**.` : 'Overhead resistance is capping upside.'}
+* **The Desk Rule:** Price is hanging out in no-man's land right now—no need to force a trade. If there's no clean edge, sitting on hands is a winning trade. We let the market come to our pitch.
+${primaryRec ? `* **The Active Game Plan:** We're stalking a **${primaryRec.side.toUpperCase()}** order around **$${primaryRec.entry.toFixed(2)}** with our defined stop at **$${primaryRec.stopLoss.toFixed(2)}**.` : ''}
 
-What aspect of this setup would you like to unpack—the entry timing, why the stop buffer is set where it is, or how we should structure the options contracts?`;
+What do you want to break down first—entry timing, our options credit spread strikes, or our daily cashflow target?`;
     }
 
     // Stream text in realistic word-chunks
@@ -409,7 +404,10 @@ What aspect of this setup would you like to unpack—the entry timing, why the s
 
     res.write('data: [DONE]\n\n');
     res.end();
-  });
+  };
+
+  app.post('/api/ai/chat', handleAiChatStream);
+  app.post('/api/ai/stream', handleAiChatStream);
 
   // In-memory Schwab session state & QA Monitor Engine
   let activeSchwabToken = process.env.SCHWAB_ACCESS_TOKEN || '';
