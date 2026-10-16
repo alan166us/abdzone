@@ -303,10 +303,10 @@ export default function App() {
   const zones = useMemo(() => {
     return detectSupplyDemandZones(candles, {
       atrPeriod: 14,
-      minImpulseMultiplier: 1.25,
+      minImpulseMultiplier: 1.0,
       maxBaseCandles: 5,
       useWickForBoundary: true,
-      recentOnly: true,
+      recentOnly: false,
       maxRecentZonesPerType: 3, // Multi-zone evaluation: top 3 demand and top 3 supply zones
       includeMitigated: false,
       dataSource: dataSourceInfo.mode,

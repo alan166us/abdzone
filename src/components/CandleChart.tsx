@@ -382,10 +382,10 @@ export const CandleChart: React.FC<CandleChartProps> = ({
     });
 
     if (recentOnlyZones) {
-      // Keep strictly ONLY the single most recent unmitigated demand zone and single most recent unmitigated supply zone
-      const recentDemand = activeZones.filter(z => z.type === 'demand' && !z.isMitigated).slice(0, 1);
-      const recentSupply = activeZones.filter(z => z.type === 'supply' && !z.isMitigated).slice(0, 1);
-      const recentMitigated = showMitigated ? activeZones.filter(z => z.isMitigated).slice(0, 1) : [];
+      // Keep up to 3 most recent unmitigated demand and supply zones
+      const recentDemand = activeZones.filter(z => z.type === 'demand' && !z.isMitigated).slice(0, 3);
+      const recentSupply = activeZones.filter(z => z.type === 'supply' && !z.isMitigated).slice(0, 3);
+      const recentMitigated = showMitigated ? activeZones.filter(z => z.isMitigated).slice(0, 2) : [];
       activeZones = [...recentDemand, ...recentSupply, ...recentMitigated];
     }
 
@@ -979,9 +979,9 @@ export const CandleChart: React.FC<CandleChartProps> = ({
     });
 
     if (recentOnlyZones) {
-      const recentDemand = active.filter(z => z.type === 'demand' && !z.isMitigated).slice(0, 1);
-      const recentSupply = active.filter(z => z.type === 'supply' && !z.isMitigated).slice(0, 1);
-      const recentMitigated = showMitigated ? active.filter(z => z.isMitigated).slice(0, 1) : [];
+      const recentDemand = active.filter(z => z.type === 'demand' && !z.isMitigated).slice(0, 3);
+      const recentSupply = active.filter(z => z.type === 'supply' && !z.isMitigated).slice(0, 3);
+      const recentMitigated = showMitigated ? active.filter(z => z.isMitigated).slice(0, 2) : [];
       active = [...recentDemand, ...recentSupply, ...recentMitigated];
     }
 
@@ -1315,9 +1315,9 @@ export const CandleChart: React.FC<CandleChartProps> = ({
             className={`px-2 py-1 text-[10px] font-medium rounded transition-colors shrink-0 whitespace-nowrap ${
               recentOnlyZones ? 'bg-sky-950/80 text-sky-300 border border-sky-800/60 font-semibold' : 'text-slate-500 hover:text-slate-300'
             }`}
-            title={recentOnlyZones ? "Showing strictly the single most recent active Demand and Supply zone" : "Showing all historical detected zones"}
+            title={recentOnlyZones ? "Showing up to 3 most recent active Demand and Supply zones" : "Showing all historical detected zones"}
           >
-            {recentOnlyZones ? '⚡ Recent (1 D / 1 S)' : 'All Historical'}
+            {recentOnlyZones ? '⚡ Recent (3 D / 3 S)' : 'All Historical'}
           </button>
           <button
             onClick={() => setShowDemand(!showDemand)}
