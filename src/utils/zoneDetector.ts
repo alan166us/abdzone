@@ -58,19 +58,20 @@ export function detectSupplyDemandZones(
     const atr = currentAtr;
 
     // 1. Identify valid impulse (departure) candles
+    // Honors options.minImpulseMultiplier (App may pass 1.0 for sensitivity or 1.25 for stricter scans)
     const bBody = Math.abs(candle.close - candle.open);
     const bRange = candle.high - candle.low;
+    const impulseMult = minImpulseMultiplier;
 
-    // Wick-tolerant impulse: requires solid body movement relative to ATR,
-    // but does not fail if there are upper/lower rejection wicks
-    const isBullImpulse = 
-      candle.close > candle.open && 
-      bBody >= (currentAtr * 1.0) && 
+    // Wick-tolerant impulse: solid body vs ATR, body/range floor keeps dojis out
+    const isBullImpulse =
+      candle.close > candle.open &&
+      bBody >= (currentAtr * impulseMult) &&
       (bRange > 0 ? (bBody / bRange) >= 0.40 : true);
 
-    const isBearImpulse = 
-      candle.close < candle.open && 
-      bBody >= (currentAtr * 1.0) && 
+    const isBearImpulse =
+      candle.close < candle.open &&
+      bBody >= (currentAtr * impulseMult) &&
       (bRange > 0 ? (bBody / bRange) >= 0.40 : true);
 
     if (!isBullImpulse && !isBearImpulse) continue;
@@ -385,15 +386,24 @@ export function detectSupplyDemandZones(
     }
   }
 
-  if (recentOnly || (maxRecentZonesPerType !== undefined && !includeMitigated)) {
+  // recentOnly=true → cap to freshest unmitigated zones per type (live deck / primary signals)
+  // recentOnly=false → return full deduplicated set (chart radar / historical context)
+  // includeMitigated only applies when recentOnly is true
+  if (recentOnly) {
     const limit = maxRecentZonesPerType ?? 3;
-    const recentDemand = deduplicatedZones.filter(z => z.type === 'demand' && !z.isMitigated).slice(0, limit);
-    const recentSupply = deduplicatedZones.filter(z => z.type === 'supply' && !z.isMitigated).slice(0, limit);
-    const result = [...recentDemand, ...recentSupply];
-    if (includeMitigated) {
-      result.push(...deduplicatedZones.filter(z => z.isMitigated).slice(0, 1));
-    }
-    return result.sort((a, b) => b.startIndex - a.startIndex);
+    const recentDemand = deduplicatedZones
+      .filter(z => z.type === 'demand' && (includeMitigated || !z.isMitigated))
+      .slice(0, limit);
+    const recentSupply = deduplicatedZones
+      .filter(z => z.type === 'supply' && (includeMitigated || !z.isMitigated))
+      .slice(0, limit);
+    return [...recentDemand, ...recentSupply].sort((a, b) => b.startIndex - a.startIndex);
+  }
+
+  if (!includeMitigated) {
+    return deduplicatedZones
+      .filter(z => !z.isMitigated)
+      .sort((a, b) => b.startIndex - a.startIndex);
   }
 
   return deduplicatedZones.sort((a, b) => b.startIndex - a.startIndex);
