@@ -1,4 +1,5 @@
 import { Candle, VolatilityMetrics } from '../types/trading';
+import { calculateSessionLiquidityLevels } from './vwapEngine';
 
 /**
  * Calculates True Range for each candle
@@ -129,6 +130,8 @@ export function calculateBollingerBands(candles: Candle[], period: number = 20, 
  * Computes latest Volatility Metrics and determines the market regime
  */
 export function getLatestVolatilityMetrics(candles: Candle[], isCrypto: boolean = false): VolatilityMetrics {
+  const sessionLevels = calculateSessionLiquidityLevels(candles);
+
   if (candles.length === 0) {
     return {
       atr: 1,
@@ -140,6 +143,7 @@ export function getLatestVolatilityMetrics(candles: Candle[], isCrypto: boolean 
       bbWidth: 5,
       regime: 'Normal',
       recommendedBufferMultiplier: 1.35,
+      sessionLevels,
     };
   }
 
@@ -183,5 +187,6 @@ export function getLatestVolatilityMetrics(candles: Candle[], isCrypto: boolean 
     bbWidth: currentBbWidth,
     regime,
     recommendedBufferMultiplier,
+    sessionLevels,
   };
 }

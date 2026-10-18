@@ -306,7 +306,7 @@ export default function App() {
       minImpulseMultiplier: 1.0,
       maxBaseCandles: 5,
       useWickForBoundary: true,
-      recentOnly: false,
+      recentOnly: true,
       maxRecentZonesPerType: 3, // Multi-zone evaluation: top 3 demand and top 3 supply zones
       includeMitigated: false,
       dataSource: dataSourceInfo.mode,
@@ -339,7 +339,10 @@ export default function App() {
       zones,
       volatilityMetrics,
       selectedAsset,
-      dataSourceInfo.mode
+      dataSourceInfo.mode,
+      'fresh',
+      candles,
+      frequency
     );
     if (recs.length === 0 && allHistoricalZones.length > 0) {
       // Responsive Zone Relaxation: If no strict fresh zone in immediate proximity produces a trade recommendation,
@@ -349,11 +352,14 @@ export default function App() {
         allHistoricalZones.filter((z) => !z.isMitigated),
         volatilityMetrics,
         selectedAsset,
-        dataSourceInfo.mode
+        dataSourceInfo.mode,
+        'historical-fallback',
+        candles,
+        frequency
       );
     }
     return recs;
-  }, [currentPrice, zones, allHistoricalZones, volatilityMetrics, selectedAsset, dataSourceInfo.mode]);
+  }, [currentPrice, zones, allHistoricalZones, volatilityMetrics, selectedAsset, dataSourceInfo.mode, candles, frequency]);
 
   // Default select first recommendation if none selected or if selected recommendation is stale
   useEffect(() => {

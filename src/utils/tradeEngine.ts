@@ -1,6 +1,7 @@
 import { Candle, SupplyDemandZone, TradeRecommendation, VolatilityMetrics, BacktestSummary, BacktestTrade, BacktestConfig, EquityPoint } from '../types/trading';
 import { getContractPointValue } from './contractSpecs';
 import { detectSupplyDemandZones } from './zoneDetector';
+import { calculateSessionVwap } from './vwapEngine';
 
 export { getContractPointValue };
 
@@ -53,7 +54,9 @@ export function generateTradeRecommendations(
   volatilityMetrics: VolatilityMetrics,
   symbol: string = 'BTC/USDT',
   dataSource?: string,
-  recommendationSource: 'fresh' | 'historical-fallback' = 'fresh'
+  recommendationSource: 'fresh' | 'historical-fallback' = 'fresh',
+  candles?: Candle[],
+  frequency: number = 5
 ): TradeRecommendation[] {
   const recommendations: TradeRecommendation[] = [];
   const atr = volatilityMetrics.atr || currentPrice * 0.015;
@@ -248,6 +251,107 @@ export function generateTradeRecommendations(
       rationale: `S.E.T. Short Plan: [Setup: ${zone.pattern} Supply Zone ($${zone.low.toFixed(2)} - $${zone.high.toFixed(2)}) · ${tags}]. [Entry: Aggressive at Proximal $${entry.toFixed(2)} / Conservative 50% Midline at $${conservativeEntry.toFixed(2)}]. [Stop: Hard SL at Distal + ${(bufferMultiplier).toFixed(2)}x ATR ($${stopLoss.toFixed(2)})]. [Targets: TP1 at 1:2 R:R ($${tp1.toFixed(2)}) · TP2 at Opposing Demand Proximal ($${tp2.toFixed(2)})]. 3-Bar Rule: If price consolidates inside base for >3-5 bars without rejection, flatten at breakeven.`,
       currentDistancePercent: distancePercent,
     });
+  }
+
+  // -------------------------------------------------------------------------
+  // Fast Micro-Continuation Triggers (DBD / RBR) on 1m and 5m charts:
+  // Flag any break below VWAP with consecutive lower closes as an active Short Scalp
+  // Stage CME Put brackets (/MES 5-pt strike) or Equity Put brackets with 1:2 R:R
+  // -------------------------------------------------------------------------
+  const isIndexFutures = symbol.includes('MES') || symbol.includes('ES');
+  const is1mOr5m = frequency <= 5;
+
+  if (is1mOr5m && candles && candles.length >= 3) {
+    const vwapPoints = calculateSessionVwap(candles);
+    const latestVwapPoint = vwapPoints[vwapPoints.length - 1];
+
+    if (latestVwapPoint) {
+      const cLast = candles[candles.length - 1];
+      const cPrev1 = candles[candles.length - 2];
+      const cPrev2 = candles[candles.length - 3];
+
+      // Break below VWAP with consecutive lower closes
+      const isBelowVwap = cLast.close < latestVwapPoint.vwap;
+      const brokeBelowOrBelow = cPrev1.close >= latestVwapPoint.vwap || cPrev2.close >= latestVwapPoint.vwap || isBelowVwap;
+      const consecutiveLowerCloses = cLast.close < cPrev1.close && cPrev1.close <= cPrev2.close;
+
+      if (brokeBelowOrBelow && isBelowVwap && consecutiveLowerCloses) {
+        const entry = Number(currentPrice.toFixed(2));
+        // Hard stop placed safely above VWAP with ATR buffer
+        const stopDistance = Math.max(atr * 0.65, Math.abs(latestVwapPoint.vwap - entry) + 0.25 * atr);
+        const stopLoss = Number((entry + stopDistance).toFixed(2));
+        const riskPerUnit = Number((stopLoss - entry).toFixed(2));
+
+        // 1:2 R:R targets calibrated to daily ATR & lower value bands (-1σ / -2σ)
+        // For /MES: Target 5–15 pts; for SPY: Target $0.50–$1.50
+        const defaultPtTarget = isIndexFutures
+          ? Math.max(5, Math.min(15, riskPerUnit * 2.0))
+          : Math.max(0.50, Math.min(1.50, riskPerUnit * 2.0));
+
+        const tp1 = Number(Math.min(entry - defaultPtTarget, latestVwapPoint.lower1).toFixed(2));
+        const tp2 = Number(Math.min(entry - defaultPtTarget * 1.6, latestVwapPoint.lower2).toFixed(2));
+        const tp3 = Number((entry - defaultPtTarget * 2.4).toFixed(2));
+
+        // Stage CME Put brackets (/MES 5-pt strike) or Equity Put brackets
+        const mesStrike = isIndexFutures ? Math.floor(entry / 5) * 5 : Math.floor(entry);
+        const strikeLabel = isIndexFutures
+          ? `CME /MES 5-pt Put (${mesStrike}P Bracket)`
+          : `Equity Put (${mesStrike}P Bracket)`;
+
+        recommendations.unshift({
+          id: `rec-short-micro-vwap-${cLast.time}`,
+          zoneId: `zone-micro-dbd-${cLast.time}`,
+          symbol,
+          side: 'short',
+          zoneType: 'supply',
+          pattern: 'DBD',
+          entry,
+          conservativeEntry: Number((entry + 0.15 * atr).toFixed(2)),
+          entryType: 'Zone Boundary',
+          executionMode: 'Active Short Scalp (VWAP Breakdown)',
+          executionHorizon: 'Daily Scalp · 1m-5m',
+          targetRangeLabel: isIndexFutures ? 'Target: 5–15 pts on /MES' : 'Target: $0.50–$1.50 on SPY',
+          isMicroContinuation: true,
+          stopLoss,
+          bufferAtrMultiplier: bufferMultiplier,
+          bufferAmount,
+          takeProfit1: tp1,
+          takeProfit2: tp2,
+          takeProfit3: tp3,
+          riskPerUnit,
+          rewardPerUnit1: Number((entry - tp1).toFixed(2)),
+          rewardPerUnit2: Number((entry - tp2).toFixed(2)),
+          rewardPerUnit3: Number((entry - tp3).toFixed(2)),
+          riskRewardRatio: 2.0,
+          status: 'active',
+          heuristicQualityScore: 92,
+          qualityScore: 92,
+          proximityPhase: 'Phase B: Zone Touch (Execute)',
+          distanceInAtr: 0.1,
+          vwapConfluence: { scoreBonus: 20, tag: 'VWAP Breakdown Momentum (-1σ / -2σ Target)' },
+          recommendationSource,
+          rationale: `Fast Micro-Continuation Short Scalp (DBD): Price broke below institutional VWAP ($${latestVwapPoint.vwap.toFixed(2)}) with consecutive lower closes. Staged ${strikeLabel} targeting lower value bands (-1σ $${latestVwapPoint.lower1.toFixed(2)} / -2σ $${latestVwapPoint.lower2.toFixed(2)}) with calibrated 1:2 R:R.`,
+          currentDistancePercent: 0,
+        });
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Horizon Badges & Target Range Tagging:
+  // [Daily Scalp · 1m-5m] (Target: 5–15 pts on /MES, $0.50–$1.50 on SPY)
+  // [Weekly Trend · 15m-1h] (Target: 25–60 pts on /MES, $3.00–$8.00 on SPY)
+  // -------------------------------------------------------------------------
+  const defaultHorizon = is1mOr5m ? 'Daily Scalp · 1m-5m' : 'Weekly Trend · 15m-1h';
+  const defaultTargetLabel = is1mOr5m
+    ? (isIndexFutures ? 'Target: 5–15 pts on /MES' : 'Target: $0.50–$1.50 on SPY')
+    : (isIndexFutures ? 'Target: 25–60 pts on /MES' : 'Target: $3.00–$8.00 on SPY');
+
+  for (const rec of recommendations) {
+    if (!rec.executionHorizon) {
+      rec.executionHorizon = defaultHorizon;
+      rec.targetRangeLabel = defaultTargetLabel;
+    }
   }
 
   return recommendations.sort((a, b) => Math.abs(a.currentDistancePercent) - Math.abs(b.currentDistancePercent));

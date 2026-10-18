@@ -60,6 +60,16 @@ export interface SupplyDemandZone {
   notes: string;
 }
 
+export interface SessionLiquidityLevels {
+  pdh: number;
+  pdl: number;
+  pdc: number;
+  onh: number;
+  onl: number;
+  ibHigh: number;
+  ibLow: number;
+}
+
 export interface VolatilityMetrics {
   atr: number;
   atrPercent: number;
@@ -70,6 +80,7 @@ export interface VolatilityMetrics {
   bbWidth: number;
   regime: 'Compression (Squeeze)' | 'Normal' | 'Expansion (High Volatility)' | 'Extreme Impulse';
   recommendedBufferMultiplier: number;
+  sessionLevels?: SessionLiquidityLevels;
 }
 
 export interface TradeRecommendation {
@@ -105,6 +116,9 @@ export interface TradeRecommendation {
   /** fresh = recent-only zones; historical-fallback = relaxation path */
   recommendationSource?: 'fresh' | 'historical-fallback';
   executionMode?: 'Execution Mode: Rejection Confirmation' | string;
+  executionHorizon?: 'Daily Scalp · 1m-5m' | 'Weekly Trend · 15m-1h' | string;
+  targetRangeLabel?: string;
+  isMicroContinuation?: boolean;
 }
 
 export interface BacktestConfig {

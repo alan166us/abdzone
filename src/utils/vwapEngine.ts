@@ -1,4 +1,4 @@
-import { Candle } from '../types/trading';
+import { Candle, SessionLiquidityLevels } from '../types/trading';
 
 export interface VwapPoint {
   time: number;
@@ -7,6 +7,112 @@ export interface VwapPoint {
   lower1: number;
   upper2: number;
   lower2: number;
+}
+
+/**
+ * Calculates key intraday auction levels from candle series:
+ * - PDH (Prior Day High), PDL (Prior Day Low), PDC (Prior Day Close)
+ * - ONH (Overnight High), ONL (Overnight Low before 09:30 AM ET)
+ * - IB High (Initial Balance High 09:30-10:30 AM ET), IB Low (Initial Balance Low)
+ */
+export function calculateSessionLiquidityLevels(candles: Candle[]): SessionLiquidityLevels {
+  if (candles.length === 0) {
+    return { pdh: 0, pdl: 0, pdc: 0, onh: 0, onl: 0, ibHigh: 0, ibLow: 0 };
+  }
+
+  // Group candles by calendar date in America/New_York
+  const dayMap = new Map<string, Candle[]>();
+  for (const c of candles) {
+    const d = new Date(c.time);
+    const dateStr = d.toLocaleDateString('en-US', { timeZone: 'America/New_York' });
+    let arr = dayMap.get(dateStr);
+    if (!arr) {
+      arr = [];
+      dayMap.set(dateStr, arr);
+    }
+    arr.push(c);
+  }
+
+  const days = Array.from(dayMap.keys());
+  let pdh = 0;
+  let pdl = 0;
+  let pdc = 0;
+
+  if (days.length >= 2) {
+    const priorDayCandles = dayMap.get(days[days.length - 2]) || [];
+    if (priorDayCandles.length > 0) {
+      pdh = Math.max(...priorDayCandles.map(c => c.high));
+      pdl = Math.min(...priorDayCandles.map(c => c.low));
+      pdc = priorDayCandles[priorDayCandles.length - 1].close;
+    }
+  } else {
+    // Single session or synthetic slice fallback: use first half as prior auction context
+    const half = Math.max(1, Math.floor(candles.length / 2));
+    const priorSlice = candles.slice(0, half);
+    pdh = Math.max(...priorSlice.map(c => c.high));
+    pdl = Math.min(...priorSlice.map(c => c.low));
+    pdc = priorSlice[priorSlice.length - 1].close;
+  }
+
+  // Current session candles (latest day)
+  const currentDayCandles = days.length > 0 ? (dayMap.get(days[days.length - 1]) || candles) : candles;
+
+  // Split into Overnight / Pre-Market (before 09:30 AM ET) and Initial Balance (09:30 - 10:30 AM ET)
+  const overnightCandles: Candle[] = [];
+  const ibCandles: Candle[] = [];
+
+  for (const c of currentDayCandles) {
+    const d = new Date(c.time);
+    const timeStr = d.toLocaleTimeString('en-US', {
+      timeZone: 'America/New_York',
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    const [hStr, mStr] = timeStr.split(':');
+    const hour = parseInt(hStr, 10);
+    const minute = parseInt(mStr, 10);
+    const minutesOfDay = hour * 60 + minute;
+
+    if (minutesOfDay < 570) {
+      // Before 09:30 AM ET
+      overnightCandles.push(c);
+    } else if (minutesOfDay >= 570 && minutesOfDay <= 630) {
+      // 09:30 AM ET to 10:30 AM ET
+      ibCandles.push(c);
+    }
+  }
+
+  let onh = 0;
+  let onl = 0;
+  if (overnightCandles.length > 0) {
+    onh = Math.max(...overnightCandles.map(c => c.high));
+    onl = Math.min(...overnightCandles.map(c => c.low));
+  } else {
+    onh = currentDayCandles[0].high;
+    onl = currentDayCandles[0].low;
+  }
+
+  let ibHigh = 0;
+  let ibLow = 0;
+  if (ibCandles.length > 0) {
+    ibHigh = Math.max(...ibCandles.map(c => c.high));
+    ibLow = Math.min(...ibCandles.map(c => c.low));
+  } else {
+    const proxyIb = currentDayCandles.slice(0, Math.min(12, currentDayCandles.length));
+    ibHigh = Math.max(...proxyIb.map(c => c.high));
+    ibLow = Math.min(...proxyIb.map(c => c.low));
+  }
+
+  return {
+    pdh: Number(pdh.toFixed(2)),
+    pdl: Number(pdl.toFixed(2)),
+    pdc: Number(pdc.toFixed(2)),
+    onh: Number(onh.toFixed(2)),
+    onl: Number(onl.toFixed(2)),
+    ibHigh: Number(ibHigh.toFixed(2)),
+    ibLow: Number(ibLow.toFixed(2)),
+  };
 }
 
 export function calculateSessionVwap(

@@ -744,6 +744,23 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                 <span className="text-[11px] text-slate-400">
                   {isLong ? 'Demand Reversal' : 'Supply Reversal'}
                 </span>
+                {rec.executionHorizon && (
+                  <span
+                    className={`px-2 py-0.5 rounded font-mono font-bold text-[10px] border shadow-xs ${
+                      rec.executionHorizon.includes('Daily Scalp')
+                        ? 'border-cyan-500/80 bg-cyan-950/80 text-cyan-300'
+                        : 'border-purple-500/80 bg-purple-950/80 text-purple-300'
+                    }`}
+                    title={rec.targetRangeLabel}
+                  >
+                    [{rec.executionHorizon}]
+                  </span>
+                )}
+                {rec.targetRangeLabel && (
+                  <span className="text-[10px] text-slate-400 font-mono hidden md:inline-block">
+                    ({rec.targetRangeLabel})
+                  </span>
+                )}
                 {rec.executionMode && (
                   <span className="px-2 py-0.5 rounded font-bold border border-emerald-500/80 bg-emerald-950/80 text-emerald-300 text-[10px] animate-pulse">
                     Rejection Confirmation
