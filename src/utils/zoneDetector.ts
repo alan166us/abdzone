@@ -353,7 +353,171 @@ export function detectSupplyDemandZones(
     });
   }
 
-  // P0: failed N-bar breakout \u2192 provisional supply/demand (daily/HTF options)
+  // -------------------------------------------------------------------------
+  // Dynamic S&D Levels from Session Liquidity Extremes (PDH/ONH, PDL/ONL)
+  // Auto-generate high-priority Session Supply & Demand zones on rejection wicks
+  // -------------------------------------------------------------------------
+  const sessionLevels = options.sessionLevels || calculateSessionLiquidityLevels(candles);
+
+  const supplyTargets: { level: number; label: 'PDH' | 'ONH' }[] = [];
+  if (sessionLevels.pdh && sessionLevels.pdh > 0) supplyTargets.push({ level: sessionLevels.pdh, label: 'PDH' });
+  if (sessionLevels.onh && sessionLevels.onh > 0) supplyTargets.push({ level: sessionLevels.onh, label: 'ONH' });
+
+  const demandTargets: { level: number; label: 'PDL' | 'ONL' }[] = [];
+  if (sessionLevels.pdl && sessionLevels.pdl > 0) demandTargets.push({ level: sessionLevels.pdl, label: 'PDL' });
+  if (sessionLevels.onl && sessionLevels.onl > 0) demandTargets.push({ level: sessionLevels.onl, label: 'ONL' });
+
+  const scanStart = Math.max(2, candles.length - 120);
+  for (let i = scanStart; i < candles.length; i++) {
+    const c = candles[i];
+    const currentAtr = atrs[i] || 1;
+    const cRange = c.high - c.low;
+    if (cRange <= 0) continue;
+
+    // Check Bearish Rejection Wick near PDH / ONH -> Session Supply Zone
+    for (const target of supplyTargets) {
+      const dist = Math.abs(c.high - target.level);
+      const isWithin1Atr = dist <= currentAtr * 1.0 || (c.high >= target.level && c.low <= target.level);
+      if (isWithin1Atr) {
+        const upperWick = c.high - Math.max(c.open, c.close);
+        const upperWickRatio = upperWick / cRange;
+        const isBearishRejection = upperWickRatio >= 0.35 && upperWick >= currentAtr * 0.25;
+        if (isBearishRejection) {
+          const zHigh = Number(Math.max(c.high, target.level).toFixed(2));
+          const zLow = Number(Math.min(c.high - currentAtr * 0.40, Math.max(c.open, c.close)).toFixed(2));
+          if (zHigh > zLow) {
+            let isMitigated = false;
+            let mitigatedIndex: number | undefined;
+            let testedCount = 0;
+            for (let j = i + 1; j < candles.length; j++) {
+              if (candles[j].high >= zLow && candles[j].low <= zHigh) testedCount++;
+              if (candles[j].close > zHigh) {
+                isMitigated = true;
+                mitigatedIndex = j;
+                break;
+              }
+            }
+
+            const currentClose = candles[candles.length - 1]?.close || zLow;
+            const distanceToProximal = Math.abs(currentClose - zLow);
+            const distanceInAtr = Number((distanceToProximal / Math.max(0.0001, atrs[candles.length - 1] || currentAtr)).toFixed(2));
+
+            rawZones.push({
+              id: `session-supply-${target.label.toLowerCase()}-${i}-${Math.round(zHigh * 10)}`,
+              type: 'supply',
+              pattern: 'RBD',
+              high: zHigh,
+              low: zLow,
+              equilibrium: Number(((zHigh + zLow) / 2).toFixed(2)),
+              proximalLine: zLow,
+              distalLine: zHigh,
+              conservativeEntry: Number(((zHigh + zLow) / 2).toFixed(2)),
+              startIndex: Math.max(0, i - 1),
+              endIndex: i,
+              startTime: c.time,
+              departureVelocity: 2.5,
+              departurePercent: Number(((currentAtr * 1.5) / c.close * 100).toFixed(2)),
+              strengthScore: 95,
+              heuristicQualityScore: 95,
+              testedCount,
+              isDepleted: testedCount >= 2,
+              isMitigated,
+              mitigatedIndex,
+              volatilityAtCreation: Number(currentAtr.toFixed(2)),
+              baseLength: 1,
+              trendConfluence: 'pro-trend',
+              confluenceTags: [
+                `Session Supply (${target.label} Rejection) ★`,
+                'High-Priority Session Auction',
+                'Liquidity Sweep Reversal',
+                'Session Extreme Resistance'
+              ],
+              distanceInAtr,
+              proximityPhase: distanceInAtr <= 0.8
+                ? 'Phase B: Zone Touch (Execute)'
+                : distanceInAtr <= 1.5
+                ? 'Phase A: Staging (1.0–1.5x ATR)'
+                : 'Dormant (>1.5x ATR)',
+              notes: `High-priority Session Supply zone formed via bearish rejection wick at ${target.label} (${target.level.toFixed(2)})`,
+            });
+          }
+        }
+      }
+    }
+
+    // Check Bullish Rejection Wick near PDL / ONL -> Session Demand Zone
+    for (const target of demandTargets) {
+      const dist = Math.abs(c.low - target.level);
+      const isWithin1Atr = dist <= currentAtr * 1.0 || (c.low <= target.level && c.high >= target.level);
+      if (isWithin1Atr) {
+        const lowerWick = Math.min(c.open, c.close) - c.low;
+        const lowerWickRatio = lowerWick / cRange;
+        const isBullishRejection = lowerWickRatio >= 0.35 && lowerWick >= currentAtr * 0.25;
+        if (isBullishRejection) {
+          const zLow = Number(Math.min(c.low, target.level).toFixed(2));
+          const zHigh = Number(Math.max(c.low + currentAtr * 0.40, Math.min(c.open, c.close)).toFixed(2));
+          if (zHigh > zLow) {
+            let isMitigated = false;
+            let mitigatedIndex: number | undefined;
+            let testedCount = 0;
+            for (let j = i + 1; j < candles.length; j++) {
+              if (candles[j].low <= zHigh && candles[j].high >= zLow) testedCount++;
+              if (candles[j].close < zLow) {
+                isMitigated = true;
+                mitigatedIndex = j;
+                break;
+              }
+            }
+
+            const currentClose = candles[candles.length - 1]?.close || zHigh;
+            const distanceToProximal = Math.abs(currentClose - zHigh);
+            const distanceInAtr = Number((distanceToProximal / Math.max(0.0001, atrs[candles.length - 1] || currentAtr)).toFixed(2));
+
+            rawZones.push({
+              id: `session-demand-${target.label.toLowerCase()}-${i}-${Math.round(zLow * 10)}`,
+              type: 'demand',
+              pattern: 'DBR',
+              high: zHigh,
+              low: zLow,
+              equilibrium: Number(((zHigh + zLow) / 2).toFixed(2)),
+              proximalLine: zHigh,
+              distalLine: zLow,
+              conservativeEntry: Number(((zHigh + zLow) / 2).toFixed(2)),
+              startIndex: Math.max(0, i - 1),
+              endIndex: i,
+              startTime: c.time,
+              departureVelocity: 2.5,
+              departurePercent: Number(((currentAtr * 1.5) / c.close * 100).toFixed(2)),
+              strengthScore: 95,
+              heuristicQualityScore: 95,
+              testedCount,
+              isDepleted: testedCount >= 2,
+              isMitigated,
+              mitigatedIndex,
+              volatilityAtCreation: Number(currentAtr.toFixed(2)),
+              baseLength: 1,
+              trendConfluence: 'pro-trend',
+              confluenceTags: [
+                `Session Demand (${target.label} Rejection) ★`,
+                'High-Priority Session Auction',
+                'Liquidity Sweep Reversal',
+                'Session Extreme Support'
+              ],
+              distanceInAtr,
+              proximityPhase: distanceInAtr <= 0.8
+                ? 'Phase B: Zone Touch (Execute)'
+                : distanceInAtr <= 1.5
+                ? 'Phase A: Staging (1.0–1.5x ATR)'
+                : 'Dormant (>1.5x ATR)',
+              notes: `High-priority Session Demand zone formed via bullish rejection wick at ${target.label} (${target.level.toFixed(2)})`,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // P0: failed N-bar breakout → provisional supply/demand (daily/HTF options)
   rawZones.push(...detectFailedBreakoutZones(candles, atrs));
 
   const recentFirst = [...rawZones].sort((a, b) => b.startIndex - a.startIndex);
