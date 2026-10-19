@@ -23,6 +23,7 @@ import {
   Lock,
   Activity
 } from 'lucide-react';
+import { PWAInstallButton } from './PWAInstallButton';
 
 export type ActiveTab = 'chart' | 'options' | 'monitor' | 'radar' | 'journal' | 'volatility' | 'backtest' | 'sizer';
 
@@ -415,6 +416,9 @@ export const TopNav: React.FC<TopNavProps> = ({
           </button>
         )}
 
+        {/* PWA Standalone Desktop / Mobile Install Button */}
+        <PWAInstallButton variant="nav" />
+
         {/* Configuration, Setup & Feeds Dropdown */}
         <div className="relative shrink-0" ref={configRef}>
           <button
@@ -590,6 +594,14 @@ export const TopNav: React.FC<TopNavProps> = ({
                     <span className="text-[10px] font-mono text-emerald-400 group-hover:translate-x-0.5 transition-transform">Run &rarr;</span>
                   </button>
                 )}
+              </div>
+
+              {/* SECTION 4: DESKTOP & STANDALONE APP */}
+              <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
+                <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500 px-1">
+                  Desktop &amp; Standalone Experience
+                </div>
+                <PWAInstallButton variant="menu" />
               </div>
             </div>
           )}

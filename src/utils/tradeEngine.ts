@@ -38,9 +38,14 @@ export function generateTradeRecommendations(
   const bufferMultiplier = volatilityMetrics.recommendedBufferMultiplier || 1.30;
   const bufferAmount = atr * bufferMultiplier;
 
+  const is1mOr5m = frequency <= 5;
+  const isIndexFutures = symbol.includes('MES') || symbol.includes('ES');
+
   const activeDemandZones = zones
     .filter(z => {
       if (z.type !== 'demand' || z.isMitigated || z.testedCount > 2) return false;
+      // Fast Micro-Continuation Triggers (RBR): for 1m and 5m charts, require minimum 2 base candles
+      if (is1mOr5m && z.pattern === 'RBR' && (z.baseLength || 1) < 2) return false;
       if (currentPrice < z.low - 0.2 * atr) return false;
       const proximal = z.proximalLine || z.high;
       const distToProximal = Math.max(0, currentPrice - proximal);
@@ -60,6 +65,8 @@ export function generateTradeRecommendations(
   const activeSupplyZones = zones
     .filter(z => {
       if (z.type !== 'supply' || z.isMitigated || z.testedCount > 2) return false;
+      // Fast Micro-Continuation Triggers (DBD): for 1m and 5m charts, require minimum 2 base candles
+      if (is1mOr5m && z.pattern === 'DBD' && (z.baseLength || 1) < 2) return false;
       if (currentPrice > z.high + 0.2 * atr) return false;
       const proximal = z.proximalLine || z.low;
       const distToProximal = Math.max(0, proximal - currentPrice);
@@ -196,33 +203,37 @@ export function generateTradeRecommendations(
     });
   }
 
-  // VWAP Breakdown Continuation (P0 \u2014 extended beyond 1m/5m)
-  const isIndexFutures = symbol.includes('MES') || symbol.includes('ES');
-  const is1mOr5m = frequency <= 5;
-  const allowContinuation = frequency <= 390 && candles && candles.length >= 3;
+  // Fast Micro-Continuation Triggers (DBD / RBR) on VWAP
+  // Flag any break below VWAP with consecutive lower closes as an active Short Scalp
+  // Flag any break above VWAP with consecutive higher closes as an active Long Scalp
+  // Stage CME brackets (/MES 5-pt strike) or Equity brackets with 1:2 R:R targets targeting value bands
+  const allowContinuation = frequency <= 390 && Boolean(candles && candles.length >= 3);
 
-  if (allowContinuation) {
-    const vwapPoints = calculateSessionVwap(candles!);
+  if (allowContinuation && candles) {
+    const vwapPoints = calculateSessionVwap(candles);
     const latestVwapPoint = vwapPoints[vwapPoints.length - 1];
     if (latestVwapPoint) {
-      const cLast = candles![candles!.length - 1];
-      const cPrev1 = candles![candles!.length - 2];
-      const cPrev2 = candles![candles!.length - 3];
+      const cLast = candles[candles.length - 1];
+      const cPrev1 = candles[candles.length - 2];
+      const cPrev2 = candles[candles.length - 3];
+
+      // 1. Bearish Breakdown (DBD) -> Active Short Scalp targeting lower value bands (-1σ / -2σ)
       const isBelowVwap = cLast.close < latestVwapPoint.vwap;
       const brokeBelowOrBelow = cPrev1.close >= latestVwapPoint.vwap || cPrev2.close >= latestVwapPoint.vwap || isBelowVwap;
       const consecutiveLowerCloses = cLast.close < cPrev1.close && cPrev1.close <= cPrev2.close;
 
       if (brokeBelowOrBelow && isBelowVwap && consecutiveLowerCloses) {
         const entry = Number(currentPrice.toFixed(2));
-        const stopDistance = Math.max(atr * 0.65, Math.abs(latestVwapPoint.vwap - entry) + 0.25 * atr);
+        const stopDistance = Math.max(atr * 0.70, Math.abs(latestVwapPoint.vwap - entry) + 0.25 * atr);
         const stopLoss = Number((entry + stopDistance).toFixed(2));
         const riskPerUnit = Number((stopLoss - entry).toFixed(2));
-        const defaultPtTarget = isIndexFutures
-          ? Math.max(5, Math.min(15, riskPerUnit * 2.0))
-          : Math.max(0.50, Math.min(1.50, riskPerUnit * 2.0));
-        const tp1 = Number(Math.min(entry - defaultPtTarget, latestVwapPoint.lower1).toFixed(2));
-        const tp2 = Number(Math.min(entry - defaultPtTarget * 1.6, latestVwapPoint.lower2).toFixed(2));
-        const tp3 = Number((entry - defaultPtTarget * 2.4).toFixed(2));
+
+        // 1:2 R:R target calibrated to daily ATR, targeting lower value bands (-1σ / -2σ)
+        const target2R = entry - riskPerUnit * 2.0;
+        const tp1 = Number(Math.min(entry - riskPerUnit * 1.5, latestVwapPoint.lower1).toFixed(2));
+        const tp2 = Number(Math.min(target2R, latestVwapPoint.lower2).toFixed(2));
+        const tp3 = Number((entry - riskPerUnit * 3.0).toFixed(2));
+
         const mesStrike = isIndexFutures ? Math.floor(entry / 5) * 5 : Math.floor(entry);
         const strikeLabel = isIndexFutures
           ? `CME /MES 5-pt Put (${mesStrike}P Bracket)`
@@ -239,10 +250,10 @@ export function generateTradeRecommendations(
           conservativeEntry: Number((entry + 0.15 * atr).toFixed(2)),
           entryType: 'Zone Boundary',
           executionMode: 'Active Short Scalp (VWAP Breakdown)',
-          executionHorizon: is1mOr5m ? 'Daily Scalp \u00b7 1m-5m' : frequency <= 60 ? 'Swing \u00b7 15m-1h' : 'Swing \u00b7 Daily/HTF',
+          executionHorizon: is1mOr5m ? 'Daily Scalp · 1m-5m' : 'Weekly Trend · 15m-1h',
           targetRangeLabel: is1mOr5m
-            ? (isIndexFutures ? 'Target: 5\u201315 pts on /MES' : 'Target: $0.50\u2013$1.50 on SPY')
-            : (isIndexFutures ? 'Target: 15\u201340 pts on /MES' : 'Target: $1.50\u2013$5.00 on SPY'),
+            ? (isIndexFutures ? 'Target: 5–15 pts on /MES' : 'Target: $0.50–$1.50 on SPY')
+            : (isIndexFutures ? 'Target: 25–60 pts on /MES' : 'Target: $3.00–$8.00 on SPY'),
           isMicroContinuation: true,
           stopLoss,
           bufferAtrMultiplier: bufferMultiplier,
@@ -256,23 +267,84 @@ export function generateTradeRecommendations(
           rewardPerUnit3: Number((entry - tp3).toFixed(2)),
           riskRewardRatio: 2.0,
           status: 'active',
-          heuristicQualityScore: 75,
-          qualityScore: 75,
+          heuristicQualityScore: 78,
+          qualityScore: 78,
           proximityPhase: 'Phase B: Zone Touch (Execute)',
           distanceInAtr: 0.1,
-          vwapConfluence: { scoreBonus: 20, tag: 'VWAP Breakdown Momentum' },
+          vwapConfluence: { scoreBonus: 20, tag: 'VWAP Breakdown Momentum (-1σ/-2σ)' },
           recommendationSource,
-          rationale: `VWAP Breakdown Short: Price broke below VWAP ($${latestVwapPoint.vwap.toFixed(2)}) with consecutive lower closes. Staged ${strikeLabel}.`,
+          rationale: `VWAP Breakdown Short: Price broke below VWAP ($${latestVwapPoint.vwap.toFixed(2)}) targeting lower band -1σ / -2σ ($${latestVwapPoint.lower2.toFixed(2)}). Staged ${strikeLabel} with 1:2 R:R.`,
+          currentDistancePercent: 0,
+        });
+      }
+
+      // 2. Bullish Breakout (RBR) -> Active Long Scalp targeting upper value bands (+1σ / +2σ)
+      const isAboveVwap = cLast.close > latestVwapPoint.vwap;
+      const brokeAboveOrAbove = cPrev1.close <= latestVwapPoint.vwap || cPrev2.close <= latestVwapPoint.vwap || isAboveVwap;
+      const consecutiveHigherCloses = cLast.close > cPrev1.close && cPrev1.close >= cPrev2.close;
+
+      if (brokeAboveOrAbove && isAboveVwap && consecutiveHigherCloses) {
+        const entry = Number(currentPrice.toFixed(2));
+        const stopDistance = Math.max(atr * 0.70, Math.abs(entry - latestVwapPoint.vwap) + 0.25 * atr);
+        const stopLoss = Number((entry - stopDistance).toFixed(2));
+        const riskPerUnit = Number((entry - stopLoss).toFixed(2));
+
+        // 1:2 R:R target calibrated to daily ATR, targeting upper value bands (+1σ / +2σ)
+        const target2R = entry + riskPerUnit * 2.0;
+        const tp1 = Number(Math.max(entry + riskPerUnit * 1.5, latestVwapPoint.upper1).toFixed(2));
+        const tp2 = Number(Math.max(target2R, latestVwapPoint.upper2).toFixed(2));
+        const tp3 = Number((entry + riskPerUnit * 3.0).toFixed(2));
+
+        const mesStrike = isIndexFutures ? Math.ceil(entry / 5) * 5 : Math.ceil(entry);
+        const strikeLabel = isIndexFutures
+          ? `CME /MES 5-pt Call (${mesStrike}C Bracket)`
+          : `Equity Call (${mesStrike}C Bracket)`;
+
+        recommendations.unshift({
+          id: `rec-long-micro-vwap-${cLast.time}`,
+          zoneId: `zone-micro-rbr-${cLast.time}`,
+          symbol,
+          side: 'long',
+          zoneType: 'demand',
+          pattern: 'RBR',
+          entry,
+          conservativeEntry: Number((entry - 0.15 * atr).toFixed(2)),
+          entryType: 'Zone Boundary',
+          executionMode: 'Active Long Scalp (VWAP Breakout)',
+          executionHorizon: is1mOr5m ? 'Daily Scalp · 1m-5m' : 'Weekly Trend · 15m-1h',
+          targetRangeLabel: is1mOr5m
+            ? (isIndexFutures ? 'Target: 5–15 pts on /MES' : 'Target: $0.50–$1.50 on SPY')
+            : (isIndexFutures ? 'Target: 25–60 pts on /MES' : 'Target: $3.00–$8.00 on SPY'),
+          isMicroContinuation: true,
+          stopLoss,
+          bufferAtrMultiplier: bufferMultiplier,
+          bufferAmount,
+          takeProfit1: tp1,
+          takeProfit2: tp2,
+          takeProfit3: tp3,
+          riskPerUnit,
+          rewardPerUnit1: Number((tp1 - entry).toFixed(2)),
+          rewardPerUnit2: Number((tp2 - entry).toFixed(2)),
+          rewardPerUnit3: Number((tp3 - entry).toFixed(2)),
+          riskRewardRatio: 2.0,
+          status: 'active',
+          heuristicQualityScore: 78,
+          qualityScore: 78,
+          proximityPhase: 'Phase B: Zone Touch (Execute)',
+          distanceInAtr: 0.1,
+          vwapConfluence: { scoreBonus: 20, tag: 'VWAP Breakout Momentum (+1σ/+2σ)' },
+          recommendationSource,
+          rationale: `VWAP Breakout Long: Price broke above VWAP ($${latestVwapPoint.vwap.toFixed(2)}) targeting upper band +1σ / +2σ ($${latestVwapPoint.upper2.toFixed(2)}). Staged ${strikeLabel} with 1:2 R:R.`,
           currentDistancePercent: 0,
         });
       }
     }
   }
 
-  const defaultHorizon = is1mOr5m ? 'Daily Scalp \u00b7 1m-5m' : 'Weekly Trend \u00b7 15m-1h';
+  const defaultHorizon = is1mOr5m ? 'Daily Scalp · 1m-5m' : 'Weekly Trend · 15m-1h';
   const defaultTargetLabel = is1mOr5m
-    ? (isIndexFutures ? 'Target: 5\u201315 pts on /MES' : 'Target: $0.50\u2013$1.50 on SPY')
-    : (isIndexFutures ? 'Target: 25\u201360 pts on /MES' : 'Target: $3.00\u2013$8.00 on SPY');
+    ? (isIndexFutures ? 'Target: 5–15 pts on /MES' : 'Target: $0.50–$1.50 on SPY')
+    : (isIndexFutures ? 'Target: 25–60 pts on /MES' : 'Target: $3.00–$8.00 on SPY');
 
   for (const rec of recommendations) {
     if (!rec.executionHorizon) {

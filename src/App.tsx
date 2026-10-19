@@ -16,6 +16,7 @@ import { DataImportModal } from './components/DataImportModal';
 import { SchwabConnectModal } from './components/SchwabConnectModal';
 import { DiagnosticSuiteModal } from './components/DiagnosticSuiteModal';
 import { GeminiChatDrawer } from './components/GeminiChatDrawer';
+import { OfflineIndicator } from './components/OfflineIndicator';
 
 import { Candle, SupplyDemandZone, TradeRecommendation, BacktestTrade, JournalTrade, OpportunityAlert } from './types/trading';
 import { generateSyntheticMarketData, generateNextSimulatedCandle } from './utils/marketData';
@@ -904,6 +905,9 @@ export default function App() {
           <span className="w-2 h-2 rounded-full bg-emerald-300 animate-ping" />
         </button>
       )}
+
+      {/* PWA Network Connectivity Indicator */}
+      <OfflineIndicator />
     </div>
   );
 }
