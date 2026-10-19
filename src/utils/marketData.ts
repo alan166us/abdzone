@@ -57,10 +57,41 @@ export const ASSET_PRESETS: AssetPreset[] = [
   },
 ];
 
+export const LIVE_PRICE_ANCHORS: Record<string, number> = {
+  'IREN': 28.50,
+  'SPY': 585.00,
+  'QQQ': 495.00,
+  '/MES': 5865.00,
+  '/MNQ': 20450.00,
+  'MES': 5865.00,
+  'MNQ': 20450.00,
+  'ES': 5865.00,
+  '/ES': 5865.00,
+  'NQ': 20450.00,
+  '/NQ': 20450.00,
+  'NVDA': 184.00,
+  'AAPL': 258.00,
+  'TSLA': 380.68,
+  'PLTR': 192.07,
+  'SPCX': 171.92,
+  'BTC/USDT': 68500.00,
+  'ETH/USDT': 2650.00,
+};
+
+export function getLivePriceAnchor(symbol: string): number | undefined {
+  const clean = symbol.replace(/^(SCHWAB:|EXCHANGE:)/, '').trim().toUpperCase();
+  return (
+    LIVE_PRICE_ANCHORS[clean] ??
+    LIVE_PRICE_ANCHORS[`/${clean}`] ??
+    LIVE_PRICE_ANCHORS[clean.replace(/^\//, '')]
+  );
+}
+
 /**
  * Procedurally generates realistic, authentic market price action with genuine
  * institutional liquidity runs, base consolidations, explosive impulses (ERC candles),
  * and pullbacks to create distinct Supply and Demand zones.
+ * Clamps price drift strictly within ±2.5% of reference anchors.
  */
 export function generateSyntheticMarketData(
   symbol: string = 'BTC/USDT',
@@ -71,7 +102,12 @@ export function generateSyntheticMarketData(
   const candles: Candle[] = [];
   const intervalMs = Math.max(1, frequencyMinutes) * 60 * 1000;
   const baseTime = Date.now() - count * intervalMs;
-  let currentPrice = startPrice;
+  
+  const cleanTicker = symbol.replace(/^(SCHWAB:|EXCHANGE:)/, '').trim().toUpperCase();
+  const anchor = getLivePriceAnchor(cleanTicker);
+  let currentPrice = anchor !== undefined ? anchor : startPrice;
+  const minClampedPrice = anchor !== undefined ? anchor * 0.975 : currentPrice * 0.70;
+  const maxClampedPrice = anchor !== undefined ? anchor * 1.025 : currentPrice * 1.30;
 
   // Parameters based on asset
   let baseVol = 0.007; // standard bar volatility
@@ -136,16 +172,29 @@ export function generateSyntheticMarketData(
       }
     }
 
-    const open = currentPrice;
+    // Mean reversion toward anchor when drifting near ±2.5% boundary
+    if (anchor !== undefined) {
+      const distFromAnchor = (currentPrice - anchor) / anchor;
+      if (distFromAnchor > 0.015) {
+        expectedDelta -= barVol * currentPrice * 0.5;
+      } else if (distFromAnchor < -0.015) {
+        expectedDelta += barVol * currentPrice * 0.5;
+      }
+    }
+
+    const open = Math.max(minClampedPrice, Math.min(maxClampedPrice, currentPrice));
     const change = expectedDelta + (Math.random() - 0.5) * barVol * currentPrice;
-    const close = Math.max(open * 0.5, open + change);
+    const rawClose = open + change;
+    const close = Math.max(minClampedPrice, Math.min(maxClampedPrice, rawClose));
 
-    // Wick generation
-    const upperWickDelta = Math.random() * barVol * currentPrice * 0.8;
-    const lowerWickDelta = Math.random() * barVol * currentPrice * 0.8;
+    // Wick generation with clamp
+    const upperWickDelta = Math.random() * barVol * currentPrice * 0.6;
+    const lowerWickDelta = Math.random() * barVol * currentPrice * 0.6;
 
-    const high = Math.max(open, close) + upperWickDelta;
-    const low = Math.min(open, close) - lowerWickDelta;
+    const rawHigh = Math.max(open, close) + upperWickDelta;
+    const rawLow = Math.min(open, close) - lowerWickDelta;
+    const high = Math.max(open, close, Math.min(maxClampedPrice, rawHigh));
+    const low = Math.min(open, close, Math.max(minClampedPrice, rawLow));
 
     const volumeBase = symbol.includes('BTC') ? 1200 : (symbol.includes('SPY') ? 450000 : 15000);
     const volumeMultiplier = regimeState === 'impulse' ? 2.8 : (regimeState === 'base' ? 0.6 : 1.0);
@@ -173,23 +222,33 @@ export function generateSyntheticMarketData(
 export function generateNextSimulatedCandle(
   lastCandle: Candle,
   isCrypto: boolean = false,
-  frequencyMinutes: number = 60
+  frequencyMinutes: number = 60,
+  symbol?: string
 ): Candle {
   const intervalMs = Math.max(1, frequencyMinutes) * 60 * 1000;
   const nextTime = lastCandle.time + intervalMs;
   const date = new Date(nextTime);
   const dateStr = date.toISOString().replace('T', ' ').substring(0, 16);
 
-  const baseVol = isCrypto ? 0.008 : 0.004;
-  const drift = (Math.random() - 0.495) * baseVol;
-  
-  const open = lastCandle.close;
-  const change = open * drift;
-  const close = open + change;
+  const anchor = symbol ? getLivePriceAnchor(symbol) : undefined;
+  const minClamped = anchor !== undefined ? anchor * 0.975 : lastCandle.close * 0.70;
+  const maxClamped = anchor !== undefined ? anchor * 1.025 : lastCandle.close * 1.30;
 
-  const wickFactor = Math.random() * baseVol * open * 0.7;
-  const high = Math.max(open, close) + wickFactor;
-  const low = Math.min(open, close) - Math.random() * baseVol * open * 0.7;
+  const baseVol = isCrypto ? 0.008 : 0.004;
+  let drift = (Math.random() - 0.495) * baseVol;
+  if (anchor !== undefined) {
+    const dist = (lastCandle.close - anchor) / anchor;
+    if (dist > 0.015) drift -= baseVol * 0.4;
+    else if (dist < -0.015) drift += baseVol * 0.4;
+  }
+  
+  const open = Math.max(minClamped, Math.min(maxClamped, lastCandle.close));
+  const change = open * drift;
+  const close = Math.max(minClamped, Math.min(maxClamped, open + change));
+
+  const wickFactor = Math.random() * baseVol * open * 0.6;
+  const high = Math.max(open, close, Math.min(maxClamped, Math.max(open, close) + wickFactor));
+  const low = Math.min(open, close, Math.max(minClamped, Math.min(open, close) - Math.random() * baseVol * open * 0.6));
 
   return {
     time: nextTime,

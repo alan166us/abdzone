@@ -63,14 +63,24 @@ export function detectSupplyDemandZones(
     const bRange = candle.high - candle.low;
     const impulseMult = minImpulseMultiplier;
 
+    // Rolling average body size for relative impulse ignition so high-ATR selloffs don't lock out supply creation
+    let bodySum = 0;
+    const bodyLookback = Math.min(10, i);
+    for (let b = i - bodyLookback; b < i; b++) {
+      bodySum += Math.abs(candles[b].close - candles[b].open);
+    }
+    const avgBody = bodyLookback > 0 ? bodySum / bodyLookback : currentAtr;
+    const relativeImpulseThreshold = Math.min(currentAtr * 0.70, Math.max(currentAtr * 0.35, avgBody * 1.3));
+    const impulseFloor = Math.min(currentAtr * impulseMult, relativeImpulseThreshold);
+
     const isBullImpulse =
       candle.close > candle.open &&
-      bBody >= (currentAtr * impulseMult) &&
+      bBody >= impulseFloor &&
       (bRange > 0 ? (bBody / bRange) >= 0.40 : true);
 
     const isBearImpulse =
       candle.close < candle.open &&
-      bBody >= (currentAtr * impulseMult) &&
+      bBody >= impulseFloor &&
       (bRange > 0 ? (bBody / bRange) >= 0.40 : true);
 
     if (!isBullImpulse && !isBearImpulse) continue;
@@ -182,6 +192,67 @@ export function detectSupplyDemandZones(
           isMitigated = true;
           mitigatedIndex = j;
           mitigatedTime = futureCandle.time;
+
+          // Convert broken institutional demand floor into Flipped Supply Zone for short/put entries on retest
+          const flippedSupplyHigh = zoneHigh;
+          const flippedSupplyLow = zoneLow;
+          let flippedTestedCount = 0;
+          let flippedMitigated = false;
+          let flippedMitigatedIdx: number | undefined;
+
+          for (let f = j + 1; f < candles.length; f++) {
+            const fCandle = candles[f];
+            if (fCandle.high >= flippedSupplyLow && fCandle.low <= flippedSupplyHigh) {
+              flippedTestedCount++;
+            }
+            if (fCandle.close > flippedSupplyHigh) {
+              flippedMitigated = true;
+              flippedMitigatedIdx = f;
+              break;
+            }
+          }
+
+          const currentClose = candles[candles.length - 1]?.close || flippedSupplyLow;
+          const distToProximal = Math.abs(currentClose - flippedSupplyLow);
+          const distanceInAtr = Number((distToProximal / Math.max(0.0001, atrs[candles.length - 1] || currentAtr)).toFixed(2));
+
+          rawZones.push({
+            id: `flipped-supply-${i}-${j}-${Math.round(flippedSupplyHigh * 10)}`,
+            type: 'supply',
+            pattern: 'DBD',
+            high: flippedSupplyHigh,
+            low: flippedSupplyLow,
+            equilibrium: Number(((flippedSupplyHigh + flippedSupplyLow) / 2).toFixed(2)),
+            proximalLine: flippedSupplyLow,
+            distalLine: flippedSupplyHigh,
+            conservativeEntry: Number(((flippedSupplyHigh + flippedSupplyLow) / 2).toFixed(2)),
+            startIndex: j,
+            endIndex: j,
+            startTime: futureCandle.time,
+            departureVelocity: 2.2,
+            departurePercent: Number(((currentAtr * 1.5) / futureCandle.close * 100).toFixed(2)),
+            strengthScore: 88,
+            heuristicQualityScore: 88,
+            testedCount: flippedTestedCount,
+            isDepleted: flippedTestedCount >= 2,
+            isMitigated: flippedMitigated,
+            mitigatedIndex: flippedMitigatedIdx,
+            volatilityAtCreation: Number(currentAtr.toFixed(2)),
+            baseLength: 1,
+            trendConfluence: 'pro-trend',
+            confluenceTags: [
+              'Flipped Supply Zone (Broken Demand Floor) ★',
+              'Role Reversal (Support -> Resistance)',
+              'Institutional Liquidity Shift',
+            ],
+            distanceInAtr,
+            proximityPhase: distanceInAtr <= 0.8
+              ? 'Phase B: Zone Touch (Execute)'
+              : distanceInAtr <= 1.5
+              ? 'Phase A: Staging (1.0–1.5x ATR)'
+              : 'Dormant (>1.5x ATR)',
+            notes: `Flipped Supply Zone created when Demand floor broke at bar ${j}. Proximal retest level: $${flippedSupplyLow.toFixed(2)}`,
+          });
           break;
         }
       } else {

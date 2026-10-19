@@ -46,6 +46,10 @@ interface TopNavProps {
   onFrequencyChange?: (freq: number) => void;
   lastSyncTime?: string;
   isLiveSyncing?: boolean;
+  serverStatus?: 'connected' | 'stale' | 'disconnected';
+  onRetryConnection?: () => void;
+  isSynthetic?: boolean;
+  anchorPrice?: number;
 }
 
 // Institutional Schwab Stocks & ETFs with Active Option Chains
@@ -104,6 +108,10 @@ export const TopNav: React.FC<TopNavProps> = ({
   onFrequencyChange,
   lastSyncTime = '5s',
   isLiveSyncing = true,
+  serverStatus = 'connected',
+  onRetryConnection,
+  isSynthetic = false,
+  anchorPrice,
 }) => {
   const [isToolsOpen, setIsToolsOpen] = useState(false);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
@@ -179,14 +187,55 @@ export const TopNav: React.FC<TopNavProps> = ({
           <span>StrataZone</span>
         </a>
 
-        {/* Live Real-Time Pulse Indicator */}
+        {/* Tri-State Feed Status Pill */}
         <div 
-          className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-950/60 border border-emerald-500/30 text-[10px] font-mono text-emerald-400 shrink-0"
-          title={`Real-Time Market Data Stream (Synced every ${lastSyncTime})`}
+          onClick={serverStatus !== 'connected' ? onRetryConnection : undefined}
+          className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono shrink-0 transition-all ${
+            serverStatus === 'disconnected'
+              ? 'bg-rose-950/90 border border-rose-500 text-rose-300 animate-pulse cursor-pointer shadow-sm shadow-rose-950'
+              : serverStatus === 'stale'
+              ? 'bg-amber-950/80 border border-amber-500/80 text-amber-300 cursor-pointer'
+              : 'bg-emerald-950/60 border border-emerald-500/30 text-emerald-400'
+          }`}
+          title={
+            serverStatus === 'disconnected'
+              ? '✖ SERVER LOST · RECONNECTING... (Click to retry immediately)'
+              : serverStatus === 'stale'
+              ? '▲ FEED: STALE (>20s without heartbeat · Click to refresh)'
+              : `● FEED: LIVE (Synced every ${lastSyncTime})`
+          }
         >
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="font-semibold">{isSimulating ? 'REPLAY' : 'LIVE ⚡'}</span>
+          {serverStatus === 'disconnected' ? (
+            <>
+              <span className="text-rose-400 font-bold">✖</span>
+              <span className="font-semibold hidden xs:inline">SERVER LOST · RECONNECTING...</span>
+              <span className="font-semibold xs:hidden">SERVER LOST</span>
+            </>
+          ) : serverStatus === 'stale' ? (
+            <>
+              <span className="text-amber-400 font-bold">▲</span>
+              <span className="font-semibold">FEED: STALE</span>
+            </>
+          ) : (
+            <>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="font-semibold">{isSimulating ? 'REPLAY' : '● FEED: LIVE'}</span>
+            </>
+          )}
         </div>
+
+        {/* Demo Simulation Badge when in synthetic mode */}
+        {isSynthetic && (
+          <div 
+            className="hidden lg:flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/40 text-amber-300 text-[10px] font-mono shrink-0"
+            title="Synthetic price walk clamped within ±2.5% of live reference anchor"
+          >
+            <span>⚠ DEMO SIMULATION</span>
+            {anchorPrice !== undefined && (
+              <span className="text-amber-200 font-bold">(Anchor: ${anchorPrice.toFixed(2)})</span>
+            )}
+          </div>
+        )}
 
         {/* Quick Schwab Stock, Option & Futures Selector */}
         <div className="flex items-center bg-slate-900 border border-slate-800 rounded px-2 py-1 gap-1.5 text-xs shrink min-w-0">

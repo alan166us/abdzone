@@ -161,13 +161,30 @@ export function generateTradeRecommendations(
     const touchesProximal = currentPrice >= (entry - 0.15 * atr) && currentPrice <= (zone.high + 0.2 * atr);
     const isQualityEligible = heuristicQualityScore >= 60;
     const isRejectionMode = touchesProximal && isQualityEligible;
-    const executionMode = isRejectionMode ? 'Execution Mode: Rejection Confirmation' : undefined;
     let proximityPhase: import('../types/trading').ProximityPhase = zone.proximityPhase || 'Dormant (>1.5x ATR)';
     if (touchesProximal) proximityPhase = 'Phase B: Zone Touch (Execute)';
-    else if (distanceInAtr <= 1.5) proximityPhase = 'Phase A: Staging (1.0\u20131.5x ATR)';
-    else proximityPhase = 'Phase A: Staging (1.0\u20131.5x ATR)';
-    const baseTags = zone.confluenceTags && zone.confluenceTags.length > 0 ? zone.confluenceTags.join(' \u00b7 ') : 'Standard Imbalance';
-    const tags = isRejectionMode ? `${baseTags} \u00b7 Execution Mode: Rejection Confirmation` : baseTags;
+    else if (distanceInAtr <= 1.5) proximityPhase = 'Phase A: Staging (1.0–1.5x ATR)';
+    else proximityPhase = 'Phase A: Staging (1.0–1.5x ATR)';
+    const isFlippedSupply = Boolean(zone.confluenceTags?.some(t => t.includes('Flipped Supply')));
+    const isPullbackBelowVwap = Boolean(candles && candles.length >= 3 && distanceInAtr <= 2.5);
+
+    // CME 5-point snapped strike for Put brackets
+    const mesStrike = isIndexFutures ? Math.floor(entry / 5) * 5 : Math.floor(entry);
+    const putBracketLabel = isIndexFutures
+      ? `CME /MES 5-pt Put (${mesStrike}P Bracket)`
+      : `Equity Put (${mesStrike}P Bracket)`;
+
+    let execMode = isRejectionMode ? 'Execution Mode: Rejection Confirmation' : undefined;
+    if (isPullbackBelowVwap) {
+      execMode = isFlippedSupply
+        ? 'Pullback to Flipped Supply (Below VWAP · Staged Put)'
+        : 'Pullback to Overhead Supply (Below VWAP · Staged Put)';
+    }
+
+    const shortRationale = isPullbackBelowVwap
+      ? `Downtrend Pullback (${isFlippedSupply ? 'Flipped Supply' : `${zone.pattern} Supply`}): Entry $${entry.toFixed(2)} (within 2.5x ATR). Staged ${putBracketLabel} targeting lower demand.`
+      : `S.E.T. Short Plan: [Setup: ${zone.pattern} Supply Zone]. [Entry: $${entry.toFixed(2)}]. [Stop: $${stopLoss.toFixed(2)}]. [TP1: $${tp1.toFixed(2)}].`;
+
     recommendations.push({
       id: `rec-short-${zone.id}`,
       zoneId: zone.id,
@@ -178,7 +195,7 @@ export function generateTradeRecommendations(
       entry,
       conservativeEntry,
       entryType: isRejectionMode ? 'Rejection Confirmation' : 'Zone Boundary',
-      executionMode,
+      executionMode: execMode,
       stopLoss,
       bufferAtrMultiplier: bufferMultiplier,
       bufferAmount,
@@ -198,7 +215,7 @@ export function generateTradeRecommendations(
       opposingZoneId: lowerDemand?.id,
       vwapConfluence: zone.vwapConfluence,
       recommendationSource,
-      rationale: `S.E.T. Short Plan: [Setup: ${zone.pattern} Supply Zone]. [Entry: $${entry.toFixed(2)}]. [Stop: $${stopLoss.toFixed(2)}]. [TP1: $${tp1.toFixed(2)}].`,
+      rationale: shortRationale,
       currentDistancePercent: distancePercent,
     });
   }
