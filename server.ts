@@ -990,7 +990,98 @@ What do you want to break down first—entry timing, our options credit spread s
       }
     }
 
-    // 2. High-fidelity Option Contract & Deterministic Dynamic Generator
+    // 2. Real-Time Public Exchange Market Data Feed (Direct live data for authentic prices & candles)
+    try {
+      let yahooSymbol = cleanSym;
+      if (cleanSym === '/MES' || cleanSym === 'MES') yahooSymbol = 'MES=F';
+      else if (cleanSym === '/ES' || cleanSym === 'ES') yahooSymbol = 'ES=F';
+      else if (cleanSym === '/MNQ' || cleanSym === 'MNQ') yahooSymbol = 'MNQ=F';
+      else if (cleanSym === '/NQ' || cleanSym === 'NQ') yahooSymbol = 'NQ=F';
+      else if (cleanSym === '/YM' || cleanSym === 'MYM' || cleanSym === 'YM') yahooSymbol = 'YM=F';
+      else if (cleanSym === '/RTY' || cleanSym === 'M2K' || cleanSym === 'RTY') yahooSymbol = 'RTY=F';
+      else if (cleanSym === '/CL' || cleanSym === 'CL') yahooSymbol = 'CL=F';
+      else if (cleanSym === '/GC' || cleanSym === 'GC') yahooSymbol = 'GC=F';
+      else if (cleanSym.includes('BTC')) yahooSymbol = 'BTC-USD';
+      else if (cleanSym.includes('ETH')) yahooSymbol = 'ETH-USD';
+
+      let yInterval = '5m';
+      let yRange = '2d';
+      if (numFreq === 1) { yInterval = '1m'; yRange = '1d'; }
+      else if (numFreq === 5) { yInterval = '5m'; yRange = '2d'; }
+      else if (numFreq === 15) { yInterval = '15m'; yRange = '5d'; }
+      else if (numFreq === 30) { yInterval = '30m'; yRange = '5d'; }
+      else if (numFreq === 60) { yInterval = '60m'; yRange = '1mo'; }
+      else if (numFreq === 240) { yInterval = '60m'; yRange = '1mo'; }
+      else if (numFreq >= 1440) { yInterval = '1d'; yRange = '1y'; }
+
+      const yUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=${yInterval}&range=${yRange}&includePrePost=true`;
+      const yRes = await fetch(yUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'application/json',
+        },
+      });
+
+      if (yRes.ok) {
+        const yData: any = await yRes.json();
+        const chartResult = yData?.chart?.result?.[0];
+        const timestamps = chartResult?.timestamp;
+        const quotes = chartResult?.indicators?.quote?.[0];
+
+        if (timestamps && quotes && timestamps.length > 0) {
+          const parsedCandles: any[] = [];
+          for (let i = 0; i < timestamps.length; i++) {
+            const op = quotes.open?.[i];
+            const hi = quotes.high?.[i];
+            const lo = quotes.low?.[i];
+            const cl = quotes.close?.[i];
+            if (op != null && cl != null && !isNaN(op) && !isNaN(cl)) {
+              parsedCandles.push({
+                datetime: timestamps[i] * 1000,
+                open: Number(op.toFixed(2)),
+                high: Number((hi != null ? hi : Math.max(op, cl)).toFixed(2)),
+                low: Number((lo != null ? lo : Math.min(op, cl)).toFixed(2)),
+                close: Number(cl.toFixed(2)),
+                volume: quotes.volume?.[i] || 1000,
+              });
+            }
+          }
+
+          if (parsedCandles.length > 5) {
+            let finalCandles = parsedCandles;
+            if (numFreq === 240) {
+              const agg: any[] = [];
+              for (let i = 0; i < parsedCandles.length; i += 4) {
+                const group = parsedCandles.slice(i, i + 4);
+                if (group.length > 0) {
+                  agg.push({
+                    datetime: group[0].datetime,
+                    open: group[0].open,
+                    high: Math.max(...group.map((c: any) => c.high)),
+                    low: Math.min(...group.map((c: any) => c.low)),
+                    close: group[group.length - 1].close,
+                    volume: group.reduce((sum: number, c: any) => sum + (c.volume || 0), 0),
+                  });
+                }
+              }
+              finalCandles = agg;
+            }
+
+            return res.json({
+              status: 'success',
+              source: 'exchange-live-feed',
+              frequency: numFreq,
+              symbol: cleanSym,
+              candles: finalCandles,
+            });
+          }
+        }
+      }
+    } catch (yErr: any) {
+      console.warn('Real-time exchange feed fetch error, falling back to local model:', yErr?.message || yErr);
+    }
+
+    // 3. High-fidelity Option Contract & Deterministic Dynamic Generator
     const isOptionContract = 
       cleanSym.includes('C0') || 
       cleanSym.includes('P0') || 
@@ -1000,20 +1091,21 @@ What do you want to break down first—entry timing, our options credit spread s
       cleanSym.endsWith('P');
 
     // Always uses real-world base price and real CURRENT date/time
-    let basePrice = isOptionContract ? 4.25 : 779.09;
-    if (cleanSym.includes('MES') || cleanSym.includes('ES')) basePrice = 7842.75;
-    else if (cleanSym.includes('NQ') || cleanSym.includes('MNQ')) basePrice = 24850.00;
+    let basePrice = isOptionContract ? 4.25 : 767.50;
+    if (cleanSym.includes('MES') || cleanSym.includes('ES')) basePrice = 7740.00;
+    else if (cleanSym.includes('NQ') || cleanSym.includes('MNQ')) basePrice = 29730.00;
     else if (cleanSym.includes('YM') || cleanSym.includes('MYM')) basePrice = 46200.00;
     else if (cleanSym.includes('RTY') || cleanSym.includes('M2K')) basePrice = 2480.00;
     else if (cleanSym.includes('CL')) basePrice = 74.20;
     else if (cleanSym.includes('GC')) basePrice = 2950.00;
-    else if (cleanSym === 'QQQ') basePrice = 605.00;
-    else if (cleanSym === 'NVDA') basePrice = 184.00;
-    else if (cleanSym === 'AAPL') basePrice = 258.00;
-    else if (cleanSym === 'TSLA') basePrice = 380.68;
-    else if (cleanSym === 'PLTR') basePrice = 192.07;
-    else if (cleanSym === 'IREN') basePrice = 41.28;
+    else if (cleanSym === 'QQQ') basePrice = 719.00;
+    else if (cleanSym === 'NVDA') basePrice = 217.25;
+    else if (cleanSym === 'AAPL') basePrice = 343.50;
+    else if (cleanSym === 'TSLA') basePrice = 367.00;
+    else if (cleanSym === 'PLTR') basePrice = 194.14;
+    else if (cleanSym === 'IREN') basePrice = 27.50;
     else if (cleanSym === 'SPCX') basePrice = 171.92;
+    else if (cleanSym === 'SPY') basePrice = 767.50;
 
     const cacheKey = `${cleanSym}_${numFreq}`;
     const intervalMs = numFreq * 60 * 1000;

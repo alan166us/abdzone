@@ -61,6 +61,7 @@ interface TradeRecommendationPanelProps {
   currentPrice?: number;
   candles?: Candle[];
   onSelectAsset?: (symbol: string) => void;
+  serverStatus?: 'connected' | 'stale' | 'disconnected';
 }
 
 export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> = ({
@@ -78,6 +79,7 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
   currentPrice,
   candles,
   onSelectAsset,
+  serverStatus = 'connected',
 }) => {
   const isFutures = Boolean(
     ticker.toUpperCase().includes('MES') ||
@@ -1222,11 +1224,18 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                     {/* Prominent Primary Action Button */}
                     <button
                       type="button"
+                      disabled={serverStatus === 'disconnected'}
                       onClick={(e) => handleCopyOrder(dynamicCompoundTosOptionCommand, `compound-${optionPlay.id}`, e)}
-                      className="w-full min-h-[44px] py-2.5 px-4 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs flex items-center justify-center gap-2 transition-all font-semibold cursor-pointer shadow-md shadow-sky-950/50 hover:shadow-sky-900/60 active:scale-[0.99]"
-                      title="Copies calculated theoretical bracket. Verify chain in TOS."
+                      className={`w-full min-h-[44px] py-2.5 px-4 rounded-lg text-xs flex items-center justify-center gap-2 transition-all font-semibold shadow-md ${
+                        serverStatus === 'disconnected'
+                          ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60'
+                          : 'bg-sky-600 hover:bg-sky-500 text-white cursor-pointer shadow-sky-950/50 hover:shadow-sky-900/60 active:scale-[0.99]'
+                      }`}
+                      title={serverStatus === 'disconnected' ? 'Copy paused: server feed disconnected' : 'Copies calculated theoretical bracket. Verify chain in TOS.'}
                     >
-                      {copiedId === `compound-${optionPlay.id}` ? (
+                      {serverStatus === 'disconnected' ? (
+                        <span className="font-bold tracking-wide text-rose-300">[PAUSED: FEED DISCONNECTED]</span>
+                      ) : copiedId === `compound-${optionPlay.id}` ? (
                         <>
                           <Check className="w-4 h-4 text-emerald-300 stroke-[2.5]" />
                           <span className="font-bold tracking-wide">Copied TOS Bracket!</span>
@@ -1409,11 +1418,18 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                     {/* Prominent Primary Action Button */}
                     <button
                       type="button"
+                      disabled={serverStatus === 'disconnected'}
                       onClick={(e) => handleCopyOrder(dynamicCompoundStockOrFuturesCommand, `stock-cmd-${rec.id}`, e)}
-                      className="w-full min-h-[44px] py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs flex items-center justify-center gap-2 transition-all font-semibold cursor-pointer shadow-md shadow-emerald-950/50 hover:shadow-emerald-900/60 active:scale-[0.99]"
-                      title="Copy complete 1st Triggers OCO compound bracket order (Parent Entry + Child Stop Loss + Child Take Profit) so ThinkorSwim pastes all 3 legs simultaneously"
+                      className={`w-full min-h-[44px] py-2.5 px-4 rounded-lg text-xs flex items-center justify-center gap-2 transition-all font-semibold shadow-md ${
+                        serverStatus === 'disconnected'
+                          ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60'
+                          : 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer shadow-emerald-950/50 hover:shadow-emerald-900/60 active:scale-[0.99]'
+                      }`}
+                      title={serverStatus === 'disconnected' ? 'Copy paused: server feed disconnected' : 'Copy complete 1st Triggers OCO compound bracket order (Parent Entry + Child Stop Loss + Child Take Profit) so ThinkorSwim pastes all 3 legs simultaneously'}
                     >
-                      {copiedId === `stock-cmd-${rec.id}` ? (
+                      {serverStatus === 'disconnected' ? (
+                        <span className="font-bold tracking-wide text-rose-300">[PAUSED: FEED DISCONNECTED]</span>
+                      ) : copiedId === `stock-cmd-${rec.id}` ? (
                         <>
                           <Check className="w-4 h-4 text-emerald-200 stroke-[2.5]" />
                           <span className="font-bold tracking-wide">Copied TOS Bracket!</span>

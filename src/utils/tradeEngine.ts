@@ -14,10 +14,17 @@ export function calculateHeuristicQualityScore(
   if (zone.testedCount === 0) score += 30;
   else if (zone.testedCount === 1) score += 15;
   if (zone.departureVelocity >= 1.5) score += 25;
-  if (dataSource !== 'synthetic' && zone.volumeImbalanceRatio !== undefined && zone.volumeImbalanceRatio >= 1.5) score += 25;
+  // Gate wholesale volume points strictly to non-synthetic feeds
+  if (
+    dataSource !== 'synthetic' &&
+    zone.volumeImbalanceRatio !== undefined &&
+    zone.volumeImbalanceRatio >= 1.5
+  ) {
+    score += 25;
+  }
+
   const hasVwapConfluence = Boolean(
-    (zone.vwapConfluence && zone.vwapConfluence.scoreBonus > 0) ||
-    (zone.confluenceTags && zone.confluenceTags.some(t => t.includes('VWAP') || t.includes('\u03c3')))
+    zone.vwapConfluence && zone.vwapConfluence.scoreBonus > 0
   );
   if (hasVwapConfluence) score += 20;
   return Math.min(100, Math.max(0, score));

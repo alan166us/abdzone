@@ -19,7 +19,7 @@ import { GeminiChatDrawer } from './components/GeminiChatDrawer';
 import { OfflineIndicator } from './components/OfflineIndicator';
 
 import { Candle, SupplyDemandZone, TradeRecommendation, BacktestTrade, JournalTrade, OpportunityAlert } from './types/trading';
-import { generateSyntheticMarketData, generateNextSimulatedCandle } from './utils/marketData';
+import { generateSyntheticMarketData, generateNextSimulatedCandle, getLivePriceAnchor } from './utils/marketData';
 import { detectSupplyDemandZones } from './utils/zoneDetector';
 import { getLatestVolatilityMetrics } from './utils/volatility';
 import { generateTradeRecommendations } from './utils/tradeEngine';
@@ -97,6 +97,10 @@ export default function App() {
     mode: 'exchange',
   });
 
+  // Server Feed Connection & Heartbeat Watchdog
+  const [lastHeartbeatTime, setLastHeartbeatTime] = useState<number>(() => Date.now());
+  const [serverStatus, setServerStatus] = useState<'connected' | 'stale' | 'disconnected'>('connected');
+
   // Candle Bar Frequency (1m, 5m, 15m, 30m, 60m, 240m, 1440m)
   const [frequency, setFrequency] = useState<number>(() => {
     try {
@@ -108,6 +112,21 @@ export default function App() {
     } catch {}
     return 5; // Default to 5m intraday for immediate high-action precision
   });
+
+  // 10-second watchdog tracking live market feed heartbeat
+  useEffect(() => {
+    const watchdog = setInterval(() => {
+      const elapsed = Date.now() - lastHeartbeatTime;
+      if (elapsed > 45000) {
+        setServerStatus('disconnected');
+      } else if (elapsed > 20000) {
+        setServerStatus('stale');
+      } else {
+        setServerStatus('connected');
+      }
+    }, 10000);
+    return () => clearInterval(watchdog);
+  }, [lastHeartbeatTime]);
 
   // Real-time Market Data Loader
   const fetchAssetData = useCallback(async (assetSymbol: string, freq?: number, isBackgroundPoll: boolean = false) => {
@@ -156,7 +175,8 @@ export default function App() {
         });
         setSelectedAsset(cleanSym);
         const isSchwab = data.source === 'schwab-live-api';
-        const isLive = isSchwab;
+        const isExchangeLive = data.source === 'exchange-live-feed';
+        const isLive = isSchwab || isExchangeLive;
         const freqLabel = 
           activeFreq === 1 ? '1m Scalp' :
           activeFreq === 5 ? '5m Intraday' :
@@ -166,19 +186,25 @@ export default function App() {
           activeFreq === 240 ? '4H Trend' : '1D Daily';
 
         setDataSourceInfo({
-          source: data.source || 'exchange-feed-fallback',
+          source: isSchwab
+            ? 'Charles Schwab Brokerage Feed'
+            : isExchangeLive
+            ? 'Live Exchange Market Feed'
+            : (data.source || 'exchange-feed-fallback'),
           isRealtime: isLive,
           lastUpdated: new Date().toLocaleTimeString([], {
             hour: '2-digit',
             minute: '2-digit',
             second: '2-digit',
           }),
-          mode: isLive ? 'schwab' : 'synthetic',
+          mode: isSchwab ? 'schwab' : isExchangeLive ? 'exchange' : 'synthetic',
         });
+        setLastHeartbeatTime(Date.now());
+        setServerStatus('connected');
         if (!isBackgroundPoll) {
           setSelectedZoneId(null);
           setSelectedRecommendation(null);
-          const feedLabel = isLive ? 'Schwab Real-Time' : 'DEMO / SYNTHETIC';
+          const feedLabel = isSchwab ? 'Schwab Real-Time' : isExchangeLive ? 'Live Exchange' : 'DEMO / SYNTHETIC';
           setNotification(`Loaded ${cleanSym} (${freqLabel} · ${feedLabel})`);
           setTimeout(() => setNotification(null), 3000);
         }
@@ -187,26 +213,29 @@ export default function App() {
       }
     } catch (e) {
       console.warn('Failed to fetch live asset data, using fallback:', e);
+      setServerStatus('disconnected');
     } finally {
       setIsRefreshing(false);
     }
 
     // Fallback ONLY if initial manual load fails (never overwrite real charts on background polls)
     if (!isBackgroundPoll) {
-      let startPrice = 779.09;
-      if (cleanSym.includes('MES') || cleanSym.includes('ES')) startPrice = 7842.75;
-      else if (cleanSym.includes('NQ') || cleanSym.includes('MNQ')) startPrice = 24850;
-      else if (cleanSym.includes('YM') || cleanSym.includes('MYM')) startPrice = 46200;
-      else if (cleanSym.includes('RTY') || cleanSym.includes('M2K')) startPrice = 2480;
-      else if (cleanSym.includes('CL')) startPrice = 74.20;
-      else if (cleanSym.includes('GC')) startPrice = 2950;
-      else if (cleanSym === 'QQQ') startPrice = 605;
-      else if (cleanSym === 'NVDA') startPrice = 184;
-      else if (cleanSym === 'AAPL') startPrice = 258;
-      else if (cleanSym === 'TSLA') startPrice = 380.68;
-      else if (cleanSym === 'PLTR') startPrice = 192.07;
-      else if (cleanSym === 'IREN') startPrice = 41.28;
-      else if (cleanSym === 'SPCX') startPrice = 171.92;
+      const anchor = getLivePriceAnchor(cleanSym);
+      let startPrice = anchor ?? 585.00;
+      if (cleanSym.includes('MES') || cleanSym.includes('ES')) startPrice = anchor ?? 5865.00;
+      else if (cleanSym.includes('NQ') || cleanSym.includes('MNQ')) startPrice = anchor ?? 20450.00;
+      else if (cleanSym.includes('YM') || cleanSym.includes('MYM')) startPrice = anchor ?? 46200;
+      else if (cleanSym.includes('RTY') || cleanSym.includes('M2K')) startPrice = anchor ?? 2480;
+      else if (cleanSym.includes('CL')) startPrice = anchor ?? 74.20;
+      else if (cleanSym.includes('GC')) startPrice = anchor ?? 2950;
+      else if (cleanSym === 'QQQ') startPrice = anchor ?? 495.00;
+      else if (cleanSym === 'NVDA') startPrice = anchor ?? 184;
+      else if (cleanSym === 'AAPL') startPrice = anchor ?? 258;
+      else if (cleanSym === 'TSLA') startPrice = anchor ?? 380.68;
+      else if (cleanSym === 'PLTR') startPrice = anchor ?? 192.07;
+      else if (cleanSym === 'IREN') startPrice = anchor ?? 28.50;
+      else if (cleanSym === 'SPCX') startPrice = anchor ?? 171.92;
+      else if (cleanSym === 'SPY') startPrice = anchor ?? 585.00;
       const fallbackCandles = generateSyntheticMarketData(cleanSym, activeFreq <= 5 ? 120 : 360, startPrice, activeFreq);
       setCandles(fallbackCandles);
       setSelectedAsset(cleanSym);
@@ -264,23 +293,25 @@ export default function App() {
     const cleanSym = asset.replace(/^(SCHWAB:|EXCHANGE:)/, '').trim().toUpperCase();
     setSelectedAsset(cleanSym);
 
-    // Immediately seed clean initial candles for the target asset so that any derived
-    // calculations (volatilityMetrics, zones, recommendations) are instantly aligned with
-    // the target asset's true price realm, preventing stale SPY coordinates from lingering.
-    let startPrice = 779.09;
-    if (cleanSym.includes('MES') || cleanSym.includes('ES')) startPrice = 7842.75;
-    else if (cleanSym.includes('NQ') || cleanSym.includes('MNQ')) startPrice = 24850;
-    else if (cleanSym.includes('YM') || cleanSym.includes('MYM')) startPrice = 46200;
-    else if (cleanSym.includes('RTY') || cleanSym.includes('M2K')) startPrice = 2480;
-    else if (cleanSym.includes('CL')) startPrice = 74.20;
-    else if (cleanSym.includes('GC')) startPrice = 2950;
-    else if (cleanSym === 'QQQ') startPrice = 605;
-    else if (cleanSym === 'NVDA') startPrice = 184;
-    else if (cleanSym === 'AAPL') startPrice = 258;
-    else if (cleanSym === 'TSLA') startPrice = 380.68;
-    else if (cleanSym === 'PLTR') startPrice = 192.07;
-    else if (cleanSym === 'IREN') startPrice = 41.28;
-    else if (cleanSym === 'SPCX') startPrice = 171.92;
+    // Purge stale candle cache on symbol switch so prior symbol coordinates never linger
+    setCandles([]);
+
+    const anchor = getLivePriceAnchor(cleanSym);
+    let startPrice = anchor ?? 585.00;
+    if (cleanSym.includes('MES') || cleanSym.includes('ES')) startPrice = anchor ?? 5865.00;
+    else if (cleanSym.includes('NQ') || cleanSym.includes('MNQ')) startPrice = anchor ?? 20450.00;
+    else if (cleanSym.includes('YM') || cleanSym.includes('MYM')) startPrice = anchor ?? 46200;
+    else if (cleanSym.includes('RTY') || cleanSym.includes('M2K')) startPrice = anchor ?? 2480;
+    else if (cleanSym.includes('CL')) startPrice = anchor ?? 74.20;
+    else if (cleanSym.includes('GC')) startPrice = anchor ?? 2950;
+    else if (cleanSym === 'QQQ') startPrice = anchor ?? 495.00;
+    else if (cleanSym === 'NVDA') startPrice = anchor ?? 184;
+    else if (cleanSym === 'AAPL') startPrice = anchor ?? 258;
+    else if (cleanSym === 'TSLA') startPrice = anchor ?? 380.68;
+    else if (cleanSym === 'PLTR') startPrice = anchor ?? 192.07;
+    else if (cleanSym === 'IREN') startPrice = anchor ?? 28.50;
+    else if (cleanSym === 'SPCX') startPrice = anchor ?? 171.92;
+    else if (cleanSym === 'SPY') startPrice = anchor ?? 585.00;
 
     const freshSeed = generateSyntheticMarketData(cleanSym, frequency <= 5 ? 120 : 360, startPrice, frequency);
     setCandles(freshSeed);
@@ -576,6 +607,10 @@ export default function App() {
         onFrequencyChange={handleFrequencyChange}
         lastSyncTime={frequency <= 5 ? '5s' : frequency <= 30 ? '10s' : '20s'}
         isLiveSyncing={!isSimulating}
+        serverStatus={serverStatus}
+        onRetryConnection={() => fetchAssetData(selectedAsset, frequency, false)}
+        isSynthetic={dataSourceInfo.mode === 'synthetic'}
+        anchorPrice={getLivePriceAnchor(selectedAsset)}
       />
 
       {/* 2. Main Content Viewport */}
@@ -652,6 +687,7 @@ export default function App() {
                   currentPrice={currentPrice}
                   candles={candles}
                   onSelectAsset={handleSelectAsset}
+                  serverStatus={serverStatus}
                 />
 
                 {/* Secondary Section: Pristine Untested Order Blocks */}
@@ -907,7 +943,10 @@ export default function App() {
       )}
 
       {/* PWA Network Connectivity Indicator */}
-      <OfflineIndicator />
+      <OfflineIndicator
+        serverStatus={serverStatus}
+        onRetry={() => fetchAssetData(selectedAsset, frequency, false)}
+      />
     </div>
   );
 }
