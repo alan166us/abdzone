@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { TopNav, ActiveTab } from './components/TopNav';
 import { CandleChart } from './components/CandleChart';
 import { TradeRecommendationPanel } from './components/TradeRecommendationPanel';
@@ -10,13 +10,9 @@ import { SchwabOptionsTrader } from './components/SchwabOptionsTrader';
 import { TradingJournal } from './components/TradingJournal';
 import { OpportunityMonitor } from './components/OpportunityMonitor';
 import { ThinkorswimPostModal } from './components/ThinkorswimPostModal';
-import { QAMonitorModal } from './components/QAMonitorModal';
-import { AIAnalystModal } from './components/AIAnalystModal';
 import { DataImportModal } from './components/DataImportModal';
 import { SchwabConnectModal } from './components/SchwabConnectModal';
 import { TradierConnectModal } from './components/TradierConnectModal';
-import { DiagnosticSuiteModal } from './components/DiagnosticSuiteModal';
-import { GeminiChatDrawer } from './components/GeminiChatDrawer';
 import { OfflineIndicator } from './components/OfflineIndicator';
 
 import { Candle, SupplyDemandZone, TradeRecommendation, BacktestTrade, JournalTrade, OpportunityAlert } from './types/trading';
@@ -26,7 +22,7 @@ import { getLatestVolatilityMetrics } from './utils/volatility';
 import { generateTradeRecommendations } from './utils/tradeEngine';
 import { generateSchwabOptionPlay } from './utils/optionsEngine';
 import { getSampleJournalTrades } from './utils/journalSeed';
-import { ArrowUpRight, ArrowDownRight, Layers, SlidersHorizontal, CheckCircle, Info, Bot, Sparkles } from 'lucide-react';
+import { ArrowUpRight, ArrowDownRight, SlidersHorizontal, CheckCircle } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('chart');
@@ -51,21 +47,9 @@ export default function App() {
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
   const [isSchwabModalOpen, setIsSchwabModalOpen] = useState<boolean>(false);
   const [isTradierModalOpen, setIsTradierModalOpen] = useState<boolean>(false);
-  const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState<boolean>(false);
-  const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
-  const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
-  const [chatInitialMessage, setChatInitialMessage] = useState<string | undefined>(undefined);
-  const [chatInitialRole, setChatInitialRole] = useState<'daily_coach' | 'quant' | 'risk_architect' | 'fast_scalp'>('daily_coach');
   const [isTosModalOpen, setIsTosModalOpen] = useState<boolean>(false);
-  const [isQaMonitorOpen, setIsQaMonitorOpen] = useState<boolean>(false);
   const [notification, setNotification] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
-
-  const handleOpenAiChatWithPrompt = (msg?: string, role: 'daily_coach' | 'quant' | 'risk_architect' | 'fast_scalp' = 'daily_coach') => {
-    setChatInitialMessage(msg);
-    setChatInitialRole(role);
-    setIsChatOpen(true);
-  };
 
   // Institutional Trading Journal State with localStorage persistence
   const [journalTrades, setJournalTrades] = useState<JournalTrade[]>(() => {
@@ -602,10 +586,6 @@ export default function App() {
         onOpenImport={() => setIsImportModalOpen(true)}
         onOpenSchwab={() => setIsSchwabModalOpen(true)}
         onOpenTradier={() => setIsTradierModalOpen(true)}
-        onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
-        onOpenAiAnalyst={() => setIsAiModalOpen(true)}
-        onOpenAiChat={() => setIsChatOpen((prev) => !prev)}
-        onOpenQaMonitor={() => setIsQaMonitorOpen(true)}
         selectedAsset={selectedAsset}
         onSelectAsset={handleSelectAsset}
         alertCount={alertCount}
@@ -688,7 +668,6 @@ export default function App() {
                     setIsTosModalOpen(true);
                   }}
                   onLogToJournal={handleLogRecommendationToJournal}
-                  onOpenAiChat={handleOpenAiChatWithPrompt}
                   zones={allHistoricalZones}
                   currentPrice={currentPrice}
                   candles={candles}
@@ -772,9 +751,7 @@ export default function App() {
               onOpenSchwabModal={() => setIsSchwabModalOpen(true)}
               onOpenTradierModal={() => setIsTradierModalOpen(true)}
               onOpenTosModal={() => setIsTosModalOpen(true)}
-              onOpenQaMonitor={() => setIsQaMonitorOpen(true)}
               onLogToJournal={handleLogRecommendationToJournal}
-              onOpenAiChat={handleOpenAiChatWithPrompt}
             />
           </div>
         )}
@@ -887,45 +864,6 @@ export default function App() {
         onTradierConnected={() => fetchAssetData(selectedAsset, frequency, false)}
       />
 
-      {/* Automated Diagnostic Verification Suite Modal */}
-      <DiagnosticSuiteModal
-        isOpen={isDiagnosticsOpen}
-        onClose={() => setIsDiagnosticsOpen(false)}
-        candles={candles}
-        zones={zones}
-        volatilityMetrics={volatilityMetrics}
-        symbol={selectedAsset}
-      />
-
-      {/* AI Institutional Order Flow Analyst Modal */}
-      <AIAnalystModal
-        isOpen={isAiModalOpen}
-        onClose={() => setIsAiModalOpen(false)}
-        symbol={selectedAsset}
-        timeframe="1H"
-        currentPrice={currentPrice}
-        zones={zones}
-        volatilityMetrics={volatilityMetrics}
-        recommendations={recommendations}
-      />
-
-      {/* Real-Time Gemini 3.8 Flash AI Chat Drawer */}
-      <GeminiChatDrawer
-        isOpen={isChatOpen}
-        onClose={() => {
-          setIsChatOpen(false);
-          setChatInitialMessage(undefined);
-        }}
-        symbol={selectedAsset}
-        currentPrice={currentPrice}
-        timeframe="1H"
-        zones={zones}
-        volatilityMetrics={volatilityMetrics}
-        recommendations={recommendations}
-        initialMessage={chatInitialMessage}
-        initialRole={chatInitialRole}
-      />
-
       {/* Thinkorswim Order Posting Walkthrough & Clipboard Helper Modal */}
       <ThinkorswimPostModal
         isOpen={isTosModalOpen}
@@ -934,28 +872,7 @@ export default function App() {
         symbol={selectedAsset}
         volatilityMetrics={volatilityMetrics}
         onOpenSchwabModal={() => setIsSchwabModalOpen(true)}
-        onOpenQaMonitor={() => setIsQaMonitorOpen(true)}
       />
-
-      {/* QA Safety & Pre-Flight Order Monitor Modal */}
-      <QAMonitorModal
-        isOpen={isQaMonitorOpen}
-        onClose={() => setIsQaMonitorOpen(false)}
-        activeSymbol={selectedAsset}
-      />
-
-      {/* Floating Real-Time Gemini Chat Trigger */}
-      {!isChatOpen && (
-        <button
-          onClick={() => setIsChatOpen(true)}
-          className="fixed bottom-3 right-3 z-50 scale-90 sm:scale-100 shadow-xl flex items-center gap-2 px-3.5 py-2.5 rounded-full bg-gradient-to-r from-emerald-600 to-sky-600 hover:from-emerald-500 hover:to-sky-500 text-white shadow-emerald-950/80 border border-emerald-400/40 font-mono text-xs font-semibold cursor-pointer transition-all hover:scale-105 active:scale-95 group"
-          title="Open Real-Time Gemini 3.8 AI Market Copilot"
-        >
-          <Bot className="w-4 h-4 text-emerald-200 animate-pulse" />
-          <span>Gemini Copilot</span>
-          <span className="w-2 h-2 rounded-full bg-emerald-300 animate-ping" />
-        </button>
-      )}
 
       {/* PWA Network Connectivity Indicator */}
       <OfflineIndicator

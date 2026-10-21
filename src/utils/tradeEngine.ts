@@ -7,7 +7,7 @@ export { getContractPointValue };
 
 export function calculateHeuristicQualityScore(
   zone: SupplyDemandZone,
-  volatilityMetrics?: VolatilityMetrics,
+  _volatilityMetrics?: VolatilityMetrics,
   dataSource?: string
 ): number {
   let score = 0;
@@ -145,7 +145,7 @@ export function generateTradeRecommendations(
       opposingZoneId: overheadSupply?.id,
       vwapConfluence: zone.vwapConfluence,
       recommendationSource,
-      rationale: `S.E.T. Long Plan: [Setup: ${zone.pattern} Demand Zone]. [Entry: $${entry.toFixed(2)}]. [Stop: $${stopLoss.toFixed(2)}]. [TP1: $${tp1.toFixed(2)}].`,
+      rationale: `S.E.T. Long Plan: [Setup: ${zone.pattern} Demand Zone · ${tags}]. [Entry: $${entry.toFixed(2)}]. [Stop: $${stopLoss.toFixed(2)}]. [TP1: $${tp1.toFixed(2)}].`,
       currentDistancePercent: distancePercent,
     });
   }
@@ -382,7 +382,7 @@ export function generateTradeRecommendations(
 
 export function runHistoricalZoneBacktest(
   candles: Candle[],
-  zones: SupplyDemandZone[],
+  _zones: SupplyDemandZone[],
   volatilityMetrics: VolatilityMetrics,
   customConfig?: Partial<BacktestConfig>
 ): BacktestSummary {

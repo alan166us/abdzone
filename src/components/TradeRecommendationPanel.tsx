@@ -3,7 +3,6 @@ import { TradeRecommendation, VolatilityMetrics, SupplyDemandZone, Candle } from
 import { 
   generateSchwabOptionPlay, 
   SchwabOptionContractRecommendation,
-  formatTosOptionCommand,
   formatTosNaturalOptionCommand,
   formatTosStockOrFuturesCommand,
   formatSchwabStockSummary,
@@ -21,20 +20,14 @@ import {
   Copy, 
   Check, 
   Building2,
-  ExternalLink,
   Terminal,
   BookOpen,
   Calculator,
   RotateCcw,
   Scale,
-  Percent,
-  Sliders,
-  Flame,
   ChevronDown,
   ChevronUp,
-  DollarSign,
   AlertTriangle,
-  Sparkles,
   Activity
 } from 'lucide-react';
 
@@ -56,7 +49,6 @@ interface TradeRecommendationPanelProps {
   onOpenOptionsTab?: () => void;
   onOpenTosModal?: (rec: TradeRecommendation) => void;
   onLogToJournal?: (rec: TradeRecommendation) => void;
-  onOpenAiChat?: (initialMessage?: string, role?: 'daily_coach' | 'quant' | 'risk_architect' | 'fast_scalp') => void;
   zones?: SupplyDemandZone[];
   currentPrice?: number;
   candles?: Candle[];
@@ -74,7 +66,6 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
   onOpenOptionsTab,
   onOpenTosModal,
   onLogToJournal,
-  onOpenAiChat,
   zones,
   currentPrice,
   candles,
@@ -936,24 +927,6 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                 <span>🗣️ Explain in Plain Daily Language (Why & Market Story)</span>
                 {expandedStoryMap[rec.id] ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
               </button>
-
-              {onOpenAiChat && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenAiChat(
-                      `Explain this ${rec.side.toUpperCase()} setup on ${ticker} (${rec.pattern}) in plain daily language: what is the market movement story right now, and why are this entry ($${rec.entry.toFixed(2)}), stop-loss ($${rec.stopLoss.toFixed(2)}), and target ($${rec.takeProfit2.toFixed(2)}) chosen?`,
-                      'daily_coach'
-                    );
-                  }}
-                  className="px-2.5 py-1 rounded text-[10px] font-mono bg-sky-950/60 hover:bg-sky-900/80 border border-sky-800/80 text-sky-300 hover:text-white flex items-center gap-1 transition-colors cursor-pointer"
-                  title="Ask Gemini Copilot in Chat"
-                >
-                  <Sparkles className="w-3 h-3 text-sky-400 animate-pulse" />
-                  <span>Ask Gemini Copilot</span>
-                </button>
-              )}
             </div>
 
             {/* Plain Daily Language Breakdown Card (Expands when clicked) */}
@@ -1029,26 +1002,6 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
                     <strong>The 50% Profit Rule:</strong> When Target 1 hits, take profit on 50% of contracts and slide your stop to breakeven. Bank your daily cashflow and make the rest of the trade completely risk-free!
                   </p>
                 </div>
-
-                {onOpenAiChat && (
-                  <div className="pt-2 border-t border-emerald-800/40 flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-[10px] font-mono text-emerald-400/80">Options Trading Coach &amp; Partner Ready</span>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenAiChat(
-                          `Partner, how do we use this ${rec.side.toUpperCase()} setup on ${ticker} to generate daily cashflow with strictly limited downside risk? Walk me through the options strike, Theta decay, and our 50% profit exit rule.`,
-                          'daily_coach'
-                        );
-                      }}
-                      className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[11px] flex items-center gap-1 transition-colors cursor-pointer shadow-sm"
-                    >
-                      <Sparkles className="w-3 h-3 text-emerald-200" />
-                      <span>Ask Coach: Plan Daily Cashflow for This Setup →</span>
-                    </button>
-                  </div>
-                )}
               </div>
             )}
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Candle, VolatilityMetrics } from '../types/trading';
-import { Activity, ShieldAlert, BarChart3, TrendingUp, HelpCircle } from 'lucide-react';
+import { Activity, ShieldAlert, BarChart3, TrendingUp } from 'lucide-react';
 
 interface VolatilityMatrixProps {
   volatilityMetrics: VolatilityMetrics;

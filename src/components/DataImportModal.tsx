@@ -5,19 +5,12 @@ import { Candle, SchwabOptionTrade, SchwabOptionPerformance } from '../types/tra
 import { 
   X, 
   Upload, 
-  FileText, 
   HelpCircle, 
-  CheckCircle2, 
   AlertCircle, 
   Download, 
-  ExternalLink,
-  Sparkles,
-  ArrowRight,
-  TrendingUp,
-  TrendingDown,
-  Building2,
-  FileSpreadsheet,
-  Layers
+  Sparkles, 
+  ArrowRight, 
+  Building2 
 } from 'lucide-react';
 
 interface DataImportModalProps {

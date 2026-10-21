@@ -4,25 +4,17 @@ import {
   Pause, 
   StepForward, 
   Upload, 
-  Sparkles, 
   SlidersHorizontal, 
   Building2, 
-  ShieldCheck, 
-  Bot,
-  Search,
-  BookOpen,
-  Radio,
-  Settings,
-  ChevronDown,
-  CheckCircle2,
-  LineChart,
-  LayoutGrid,
-  Calculator,
-  Flame,
-  Zap,
-  Lock,
-  Activity,
-  Layers
+  BookOpen, 
+  Radio, 
+  Settings, 
+  ChevronDown, 
+  CheckCircle2, 
+  LineChart, 
+  LayoutGrid, 
+  Calculator, 
+  Layers 
 } from 'lucide-react';
 import { PWAInstallButton } from './PWAInstallButton';
 
@@ -37,10 +29,6 @@ interface TopNavProps {
   onOpenImport: () => void;
   onOpenSchwab?: () => void;
   onOpenTradier?: () => void;
-  onOpenDiagnostics?: () => void;
-  onOpenAiAnalyst: () => void;
-  onOpenAiChat?: () => void;
-  onOpenQaMonitor?: () => void;
   selectedAsset: string;
   onSelectAsset: (symbol: string) => void;
   alertCount?: number;
@@ -100,17 +88,12 @@ export const TopNav: React.FC<TopNavProps> = ({
   onOpenImport,
   onOpenSchwab,
   onOpenTradier,
-  onOpenDiagnostics,
-  onOpenAiAnalyst,
-  onOpenAiChat,
-  onOpenQaMonitor,
   selectedAsset,
   onSelectAsset,
   alertCount = 0,
   frequency = 60,
   onFrequencyChange,
   lastSyncTime = '5s',
-  isLiveSyncing = true,
   serverStatus = 'connected',
   onRetryConnection,
   isSynthetic = false,
@@ -429,45 +412,8 @@ export const TopNav: React.FC<TopNavProps> = ({
         </div>
       </nav>
 
-      {/* Zone 3 (Right): AI Analyst & Setup Dropdown (Clean, Isolated, Zero Overlap) */}
+      {/* Zone 3 (Right): PWA Desktop/Mobile Install & Setup Dropdown */}
       <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-        {/* Real-Time Gemini AI Chat / Copilot */}
-        {onOpenAiChat && (
-          <button
-            onClick={onOpenAiChat}
-            className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-emerald-300 bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-500/40 rounded-lg transition-colors cursor-pointer shadow-sm whitespace-nowrap"
-            title="Chat in real-time with Gemini Market Copilot"
-          >
-            <Bot className="w-3.5 h-3.5 text-emerald-400 animate-pulse shrink-0" />
-            <span>AI Copilot</span>
-          </button>
-        )}
-
-        {/* AI Order Flow & Zone Debrief */}
-        <button
-          onClick={onOpenAiAnalyst}
-          className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-medium text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors cursor-pointer shadow-sm shadow-emerald-950 whitespace-nowrap shrink-0"
-          title="AI Order Flow & Market Structure Debrief"
-        >
-          <Sparkles className="w-3.5 h-3.5 shrink-0" />
-          <span className="hidden sm:inline">AI Debrief</span>
-          <span className="sm:hidden">AI</span>
-        </button>
-
-        {/* QA Safety Status Pill (Real Money Protection Gate) */}
-        {onOpenQaMonitor && (
-          <button
-            onClick={onOpenQaMonitor}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-mono font-medium rounded-lg border border-rose-800/80 bg-rose-950/50 hover:bg-rose-900/60 text-rose-300 transition-colors cursor-pointer shadow-sm whitespace-nowrap shrink-0"
-            title="Institutional QA Safety Interlock: Real-money routing is strictly locked. Click to inspect QA Monitor & Pre-Flight Checklist."
-          >
-            <Lock className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-            <span className="hidden xl:inline">QA Safety:</span>
-            <span className="text-amber-300 font-bold">Real Money Locked</span>
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" title="QA Gate Active" />
-          </button>
-        )}
-
         {/* PWA Standalone Desktop / Mobile Install Button */}
         <PWAInstallButton variant="nav" />
 
@@ -482,7 +428,7 @@ export const TopNav: React.FC<TopNavProps> = ({
                 ? 'bg-amber-950/50 text-amber-300 border-amber-700/80 hover:bg-amber-900/60'
                 : 'text-slate-300 bg-slate-900 hover:bg-slate-800 border-slate-800 hover:text-white'
             }`}
-            title="Configure Charles Schwab API, CSV Imports, Diagnostics, and Simulation Replay"
+            title="Configure Charles Schwab API, Tradier Backup, CSV Imports, and Simulation Replay"
           >
             <Settings className={`w-3.5 h-3.5 shrink-0 ${isConfigOpen ? 'rotate-90 text-white' : 'text-slate-400'} transition-transform duration-200`} />
             <span className="font-semibold hidden sm:inline">Setup</span>
@@ -620,56 +566,7 @@ export const TopNav: React.FC<TopNavProps> = ({
                 </div>
               </div>
 
-              {/* SECTION 3: SYSTEM VERIFICATION & DIAGNOSTICS */}
-              <div className="space-y-1.5">
-                <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500 px-1">
-                  Diagnostics &amp; System Health
-                </div>
-
-                {onOpenQaMonitor && (
-                  <button
-                    onClick={() => {
-                      setIsConfigOpen(false);
-                      onOpenQaMonitor();
-                    }}
-                    className="w-full flex items-center justify-between p-2 rounded-lg bg-slate-900/80 hover:bg-slate-800/90 border border-rose-900/50 hover:border-rose-500/70 text-left transition-all group cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded bg-rose-950/80 border border-rose-800/80 flex items-center justify-center shrink-0 group-hover:border-rose-500">
-                        <Lock className="w-4 h-4 text-rose-400" />
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold text-white group-hover:text-rose-300">QA Order Monitor &amp; Safety Lock</div>
-                        <div className="text-[10px] text-slate-400">8 guardrails · dry-run simulator · audit trail</div>
-                      </div>
-                    </div>
-                    <span className="text-[10px] font-mono text-rose-400 group-hover:translate-x-0.5 transition-transform">Inspect &rarr;</span>
-                  </button>
-                )}
-
-                {onOpenDiagnostics && (
-                  <button
-                    onClick={() => {
-                      setIsConfigOpen(false);
-                      onOpenDiagnostics();
-                    }}
-                    className="w-full flex items-center justify-between p-2 rounded-lg bg-slate-900/80 hover:bg-slate-800/90 border border-slate-800 hover:border-emerald-500/50 text-left transition-all group cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded bg-emerald-950/80 border border-emerald-800/80 flex items-center justify-center shrink-0 group-hover:border-emerald-500">
-                        <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold text-white group-hover:text-emerald-300">Automated Verification Suite</div>
-                        <div className="text-[10px] text-slate-400">12 health checks &amp; test suites</div>
-                      </div>
-                    </div>
-                    <span className="text-[10px] font-mono text-emerald-400 group-hover:translate-x-0.5 transition-transform">Run &rarr;</span>
-                  </button>
-                )}
-              </div>
-
-              {/* SECTION 4: DESKTOP & STANDALONE APP */}
+              {/* SECTION 3: DESKTOP & STANDALONE APP */}
               <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
                 <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500 px-1">
                   Desktop &amp; Standalone Experience

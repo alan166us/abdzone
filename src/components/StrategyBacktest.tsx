@@ -2,20 +2,14 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { BacktestConfig, BacktestSummary, BacktestTrade, Candle, SupplyDemandZone, VolatilityMetrics } from '../types/trading';
 import { runHistoricalZoneBacktest } from '../utils/tradeEngine';
 import { 
-  Calendar, 
-  Play, 
-  RotateCcw, 
   Download, 
   Sliders, 
   TrendingUp, 
-  TrendingDown, 
   CheckCircle2, 
   XCircle, 
-  ShieldCheck, 
   ExternalLink,
   ChevronDown,
-  ChevronUp,
-  Filter
+  ChevronUp
 } from 'lucide-react';
 
 interface StrategyBacktestProps {
@@ -642,7 +636,7 @@ export const StrategyBacktest: React.FC<StrategyBacktestProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-mono text-slate-300">
-              {filteredTrades.map((trade, idx) => {
+              {filteredTrades.map((trade) => {
                 const isWin = trade.rMultiple > 0;
                 return (
                   <tr key={trade.id} className="hover:bg-slate-800/40 transition-colors">

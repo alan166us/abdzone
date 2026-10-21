@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { TradeRecommendation, VolatilityMetrics } from '../types/trading';
 import { calculatePositionSize } from '../utils/tradeEngine';
-import { Calculator, Shield, DollarSign, Target, AlertTriangle } from 'lucide-react';
+import { Shield, Target } from 'lucide-react';
 
 interface RiskSizerProps {
   recommendation: TradeRecommendation | null;

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { SupplyDemandZone, ZoneType } from '../types/trading';
-import { ArrowUpRight, ArrowDownRight, ExternalLink, Filter } from 'lucide-react';
+import { SupplyDemandZone } from '../types/trading';
+import { ArrowUpRight, ArrowDownRight, ExternalLink } from 'lucide-react';
 
 interface ZoneRadarProps {
   zones: SupplyDemandZone[];

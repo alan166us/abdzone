@@ -1,13 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, 
-  Layers, 
   ExternalLink, 
   CheckCircle2, 
   Key, 
-  Activity, 
   ShieldCheck, 
-  Lock, 
   RefreshCw, 
   AlertCircle, 
   Trash2, 

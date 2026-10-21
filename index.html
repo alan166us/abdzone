@@ -4,15 +4,24 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script>
-      // Suppress harmless Vite HMR WebSocket connection closed events in sandboxed cloud preview
+      // Suppress Vite HMR WebSocket connection closed events in sandboxed cloud preview
+      window.onerror = function(msg, url, _line, _col, err) {
+        var str = String(msg || '') + ' ' + String((err && err.message) || '') + ' ' + String(url || '');
+        if (str.indexOf('WebSocket') !== -1 || str.indexOf('without opened') !== -1 || str.indexOf('@vite/client') !== -1) {
+          return true;
+        }
+      };
       window.addEventListener('error', function(e) {
-        if (e.message && (e.message.includes('WebSocket') || e.message.includes('without opened'))) {
+        var msg = (e && (e.message || (e.error && e.error.message))) || '';
+        if (typeof msg === 'string' && (msg.indexOf('WebSocket') !== -1 || msg.indexOf('without opened') !== -1 || msg.indexOf('@vite/client') !== -1)) {
           e.stopImmediatePropagation();
           e.preventDefault();
+          return true;
         }
-      });
+      }, true);
       window.addEventListener('unhandledrejection', function(e) {
-        if (e.reason && String(e.reason).includes('WebSocket')) {
+        var reason = String((e && (e.reason && (e.reason.message || e.reason))) || '');
+        if (reason.indexOf('WebSocket') !== -1 || reason.indexOf('without opened') !== -1 || reason.indexOf('@vite/client') !== -1) {
           e.stopImmediatePropagation();
           e.preventDefault();
         }

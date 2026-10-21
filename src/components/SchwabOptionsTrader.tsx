@@ -2,11 +2,9 @@ import React, { useState } from 'react';
 import { TradeRecommendation, VolatilityMetrics, SupplyDemandZone } from '../types/trading';
 import { 
   generateSchwabOptionPlay, 
-  formatTosOptionCommand,
   formatTosNaturalOptionCommand,
   formatTosNaturalOptionExitCommand,
   formatTosCompoundStockOrFuturesBracketCommand,
-  formatTosStockOrFuturesCommand,
   generateTosFullOrderSetSummary,
   SchwabOptionContractRecommendation, 
   ExpirationStyle, 
@@ -24,51 +22,37 @@ import {
   ArrowUpRight, 
   ArrowDownRight, 
   Layers, 
-  Sparkles, 
-  SlidersHorizontal,
-  DollarSign,
-  Calculator,
-  Info,
-  ChevronRight,
-  TrendingUp,
-  AlertTriangle,
-  Terminal,
-  Keyboard,
-  BookOpen,
-  Send,
-  Lock
+  TrendingUp, 
+  AlertTriangle, 
+  Terminal, 
+  Keyboard, 
+  BookOpen
 } from 'lucide-react';
 
 interface SchwabOptionsTraderProps {
   recommendations: TradeRecommendation[];
   volatilityMetrics: VolatilityMetrics;
-  zones: SupplyDemandZone[];
+  zones?: SupplyDemandZone[];
   symbol: string;
-  currentPrice: number;
+  currentPrice?: number;
   selectedRecommendation: TradeRecommendation | null;
   onSelectRecommendation: (rec: TradeRecommendation) => void;
   onOpenSchwabModal?: () => void;
   onOpenTradierModal?: () => void;
   onOpenTosModal?: () => void;
-  onOpenQaMonitor?: () => void;
   onLogToJournal?: (rec: TradeRecommendation) => void;
-  onOpenAiChat?: (initialMessage?: string, role?: 'daily_coach' | 'quant' | 'risk_architect' | 'fast_scalp') => void;
 }
 
 export const SchwabOptionsTrader: React.FC<SchwabOptionsTraderProps> = ({
   recommendations,
   volatilityMetrics,
-  zones,
   symbol,
-  currentPrice,
   selectedRecommendation,
   onSelectRecommendation,
   onOpenSchwabModal,
   onOpenTradierModal,
   onOpenTosModal,
-  onOpenQaMonitor,
   onLogToJournal,
-  onOpenAiChat,
 }) => {
   // Option Parameters
   const [expirationStyle, setExpirationStyle] = useState<ExpirationStyle>('swing');
@@ -176,21 +160,6 @@ export const SchwabOptionsTrader: React.FC<SchwabOptionsTraderProps> = ({
         </div>
 
         <div className="flex items-center gap-2.5">
-          {onOpenAiChat && (
-            <button
-              onClick={() => {
-                onOpenAiChat(
-                  `Partner, let's review this ${optionPlay.optionType} option setup on ${symbol} ($${optionPlay.strike} Strike, Exp: ${optionPlay.expirationDisplay}): Entry @ $${optionPlay.entry.premium.toFixed(2)}, Stop-Loss @ $${optionPlay.stopLoss.premium.toFixed(2)} (Max Loss: $${totalMaxLoss.toFixed(2)}), Target @ $${optionPlay.target.premium.toFixed(2)}. How do we manage this trade for safe daily cashflow with limited downside?`,
-                  'daily_coach'
-                );
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors shadow-sm cursor-pointer"
-              title="Ask Options Coach to review this order ticket and risk parameters"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-emerald-200" />
-              <span>Ask Options Coach</span>
-            </button>
-          )}
           {onOpenTosModal && (
             <button
               onClick={onOpenTosModal}
@@ -965,18 +934,6 @@ export const SchwabOptionsTrader: React.FC<SchwabOptionsTraderProps> = ({
                     >
                       <ShieldCheck className="w-3.5 h-3.5" />
                       <span>🧪 Pre-Flight QA Audit &amp; TOS Staging</span>
-                    </button>
-                  )}
-
-                  {onOpenQaMonitor && (
-                    <button
-                      type="button"
-                      onClick={onOpenQaMonitor}
-                      className="flex items-center gap-1.5 px-3 py-2 bg-rose-950/40 hover:bg-rose-900/50 text-rose-300 border border-rose-800/80 rounded-lg text-xs font-mono font-semibold transition-all shadow-sm cursor-pointer"
-                      title="Inspect institutional QA safety guardrails and audit telemetry"
-                    >
-                      <Lock className="w-3.5 h-3.5 text-rose-400" />
-                      <span>QA Monitor (Locked)</span>
                     </button>
                   )}
 

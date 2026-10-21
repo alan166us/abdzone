@@ -2,18 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { Candle } from '../types/trading';
 import { 
   X, 
-  Layers, 
   ExternalLink, 
   CheckCircle2, 
   Key, 
-  Activity, 
-  Download, 
-  FileSpreadsheet, 
-  Sparkles, 
   ArrowRight,
   ShieldCheck,
   Building2,
-  Lock,
   RefreshCw,
   AlertCircle,
   Trash2,

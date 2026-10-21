@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { Candle, SupplyDemandZone, TradeRecommendation, VolatilityMetrics } from '../types/trading';
 import { calculateSessionVwap, VwapPoint } from '../utils/vwapEngine';
-import { ZoomIn, ZoomOut, RotateCcw, Crosshair, Layers, ChevronRight, Clock, Calendar } from 'lucide-react';
+import { ZoomIn, ZoomOut, RotateCcw, Clock } from 'lucide-react';
 
 export type TimezoneMode = 'ET' | 'CT' | 'LOCAL' | 'UTC';
 
@@ -129,7 +129,7 @@ export const CandleChart: React.FC<CandleChartProps> = ({
   const [showVwap, setShowVwap] = useState<boolean>(true);
   const [showAtrBands, setShowAtrBands] = useState<boolean>(true);
   const [showTradeSetup, setShowTradeSetup] = useState<boolean>(true);
-  const [showVolume, setShowVolume] = useState<boolean>(true);
+  const showVolume = true;
 
   // Session Institutional VWAP calculation
   const sessionVwap = useMemo(() => calculateSessionVwap(candles), [candles]);

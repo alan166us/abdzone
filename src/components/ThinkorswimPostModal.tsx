@@ -7,32 +7,21 @@ import {
   Terminal, 
   Keyboard, 
   CheckCircle2, 
-  ArrowRight,
   ShieldCheck,
-  Target,
-  Crosshair,
-  Sparkles,
-  Layers,
-  AlertTriangle,
-  Send,
-  Loader2,
-  Key,
-  Code,
-  Sliders,
-  ShieldAlert,
-  Play,
-  Lock,
-  Activity
+  Layers, 
+  AlertTriangle, 
+  Loader2, 
+  Code, 
+  ShieldAlert, 
+  Play, 
+  Lock
 } from 'lucide-react';
 import { TradeRecommendation, VolatilityMetrics } from '../types/trading';
 import { 
   generateSchwabOptionPlay, 
   SchwabOptionContractRecommendation,
-  formatTosOptionCommand,
   formatTosNaturalOptionCommand,
-  formatTosNaturalOptionExitCommand,
   formatTosStockOrFuturesCommand,
-  formatSchwabStockSummary,
   generateTosFullOrderSetSummary,
   formatTosCompoundOptionBracketCommand,
   formatTosCompoundStockOrFuturesBracketCommand
@@ -45,7 +34,6 @@ interface ThinkorswimPostModalProps {
   symbol: string;
   volatilityMetrics: VolatilityMetrics;
   onOpenSchwabModal?: () => void;
-  onOpenQaMonitor?: () => void;
 }
 
 export const ThinkorswimPostModal: React.FC<ThinkorswimPostModalProps> = ({
@@ -54,8 +42,6 @@ export const ThinkorswimPostModal: React.FC<ThinkorswimPostModalProps> = ({
   recommendation,
   symbol,
   volatilityMetrics,
-  onOpenSchwabModal,
-  onOpenQaMonitor,
 }) => {
   const [copiedType, setCopiedType] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'api' | 'desktop' | 'web'>('api');
@@ -109,12 +95,6 @@ export const ThinkorswimPostModal: React.FC<ThinkorswimPostModalProps> = ({
     optionPlay.tosExpirationStr,
     optionPlay.strike,
     optionPlay.optionType,
-    optionPlay.entry.premium,
-    effectiveQty
-  );
-
-  const dotOptionCmd = formatTosOptionCommand(
-    optionPlay.tosDotSymbol,
     optionPlay.entry.premium,
     effectiveQty
   );
@@ -352,21 +332,10 @@ export const ThinkorswimPostModal: React.FC<ThinkorswimPostModalProps> = ({
                   </span>
                   
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-800 flex items-center gap-1">
-                      <Lock className="w-3 h-3 text-rose-400" />
-                      <span>Real Money Locked</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 flex items-center gap-1">
+                      <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                      <span>Order Staging Gate</span>
                     </span>
-                    {onOpenQaMonitor && (
-                      <button
-                        type="button"
-                        onClick={onOpenQaMonitor}
-                        className="text-[10px] text-amber-400 hover:text-white flex items-center gap-1 cursor-pointer bg-slate-950 px-2 py-0.5 rounded border border-slate-800"
-                        title="Open Institutional QA Safety Monitor Suite"
-                      >
-                        <Activity className="w-3 h-3" />
-                        <span>QA Monitor Suite</span>
-                      </button>
-                    )}
                   </div>
                 </div>
 

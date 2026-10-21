@@ -155,13 +155,13 @@ export function detectSupplyDemandZones(
     if (isBullishImpulse) {
       type = 'demand';
       pattern = wasDroppingBeforeBase ? 'DBR' : 'RBR';
-      zoneHigh = Math.max(...baseUpperBodies);
+      zoneHigh = useWickForBoundary ? Math.max(...baseHighs) : Math.max(...baseUpperBodies);
       zoneLow = Math.min(...baseLows);
     } else if (isBearishImpulse) {
       type = 'supply';
       pattern = wasRallyingBeforeBase ? 'RBD' : 'DBD';
       zoneHigh = Math.max(...baseHighs);
-      zoneLow = Math.min(...baseLowerBodies);
+      zoneLow = useWickForBoundary ? Math.min(...baseLows) : Math.min(...baseLowerBodies);
     } else {
       continue;
     }

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { usePWAInstall } from '../hooks/usePWAInstall';
-import { Download, Monitor, CheckCircle2, X, Smartphone, ExternalLink, HelpCircle } from 'lucide-react';
+import { Download, Monitor, CheckCircle2, X, Smartphone } from 'lucide-react';
 
 interface PWAInstallButtonProps {
   variant?: 'nav' | 'menu' | 'banner';
@@ -72,17 +72,28 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
       <button
         onClick={handleInstallClick}
         className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded-lg border transition-all cursor-pointer whitespace-nowrap shrink-0 shadow-sm ${
-          isInstallable
+          installSuccess
+            ? 'bg-emerald-900/50 text-emerald-300 border-emerald-500'
+            : isInstallable
             ? 'bg-sky-600 hover:bg-sky-500 text-white border-sky-500 shadow-sky-950/60'
             : 'text-slate-300 hover:text-white bg-slate-900/90 hover:bg-slate-800 border-slate-800 hover:border-slate-700'
         } ${className}`}
         title="Install StrataZone as an independent desktop or mobile application (PWA)"
       >
-        <Monitor className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-        <span className="font-semibold hidden md:inline">Install Desktop App</span>
-        <span className="font-semibold md:hidden">Install</span>
-        {isInstallable && (
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+        {installSuccess ? (
+          <>
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <span className="font-semibold text-emerald-300">Installed!</span>
+          </>
+        ) : (
+          <>
+            <Monitor className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+            <span className="font-semibold hidden md:inline">Install Desktop App</span>
+            <span className="font-semibold md:hidden">Install</span>
+            {isInstallable && (
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            )}
+          </>
         )}
       </button>
 

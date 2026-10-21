@@ -315,7 +315,8 @@ export function convertOptionHistoryToCandles(
   const candles: Candle[] = [];
   const baseTime = Date.now() - 30 * 86400 * 1000;
 
-  let currentPremium = 3.50;
+  const firstTrade = optionTrades && optionTrades.length > 0 ? optionTrades[0] : null;
+  let currentPremium = firstTrade?.entryPrice || (underlyingPrice > 1000 ? 25.0 : 3.50);
   for (let i = 0; i < 60; i++) {
     const time = baseTime + i * 3600 * 1000 * 4;
     const delta = (Math.random() - 0.48) * 0.45;

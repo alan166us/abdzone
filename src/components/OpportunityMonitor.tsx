@@ -2,9 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   MonitoredOpportunity, 
   OpportunityAlert, 
-  SupplyDemandZone, 
   TradeRecommendation, 
-  VolatilityMetrics,
   Candle
 } from '../types/trading';
 import { 
@@ -18,8 +16,7 @@ import {
 } from '../utils/tradeEngine';
 import { 
   generateSchwabOptionPlay,
-  formatTosNaturalOptionCommand,
-  formatTosOptionCommand
+  formatTosNaturalOptionCommand
 } from '../utils/optionsEngine';
 import { 
   generateSyntheticMarketData 
@@ -39,15 +36,11 @@ import {
   ArrowUpRight, 
   ArrowDownRight, 
   Sparkles, 
-  ShieldAlert, 
   CheckCircle2, 
   Clock, 
-  Copy, 
   Check, 
   Building2, 
-  Terminal, 
-  Search,
-  BookOpen
+  Terminal
 } from 'lucide-react';
 
 interface OpportunityMonitorProps {
@@ -72,7 +65,6 @@ export const OpportunityMonitor: React.FC<OpportunityMonitorProps> = ({
   onSelectAsset,
   onOpenOptionsForAsset,
   onOpenChartForAsset,
-  onLogTradeToJournal,
   onAlertTriggered,
 }) => {
   // Watchlist State stored in localStorage
@@ -649,7 +641,6 @@ export const OpportunityMonitor: React.FC<OpportunityMonitorProps> = ({
             <tbody className="divide-y divide-slate-800/60 font-mono text-slate-300">
               {filteredOpps.map((opp) => {
                 const isCall = opp.signalType === 'CALL / LONG';
-                const isFuture = opp.symbol.startsWith('/');
                 const isInZone = opp.status === 'IN_ZONE';
                 const isApproaching = opp.status === 'APPROACHING';
 

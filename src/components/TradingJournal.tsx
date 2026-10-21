@@ -4,15 +4,12 @@ import {
   PatternPerformance, 
   ZonePattern, 
   ZoneType, 
-  JournalOutcome, 
-  SupplyDemandZone 
+  JournalOutcome 
 } from '../types/trading';
 import { 
   ArrowUpRight, 
   ArrowDownRight, 
   Trophy, 
-  TrendingUp, 
-  Filter, 
   Plus, 
   Download, 
   Trash2, 
@@ -20,12 +17,8 @@ import {
   CheckCircle2, 
   XCircle, 
   Clock, 
-  Layers, 
   Sparkles, 
-  BarChart3,
-  Search,
-  Check,
-  AlertCircle
+  Search
 } from 'lucide-react';
 
 interface TradingJournalProps {
@@ -45,7 +38,6 @@ export const TradingJournal: React.FC<TradingJournalProps> = ({
   onUpdateTrade,
   onDeleteTrade,
   onInspectZone,
-  onClearJournal,
   onResetSampleData,
   currentSymbol,
 }) => {
@@ -853,7 +845,7 @@ export const TradingJournal: React.FC<TradingJournalProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div>
                   <label className="block text-slate-400 mb-1">Entry Price</label>
                   <input
@@ -887,6 +879,17 @@ export const TradingJournal: React.FC<TradingJournalProps> = ({
                     onChange={(e) => setFormTarget(e.target.value)}
                     required
                     placeholder="583.00"
+                    className="w-full bg-slate-900 border border-slate-800 rounded px-3 py-2 text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-400 mb-1">Exit Fill (Opt)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formExit}
+                    onChange={(e) => setFormExit(e.target.value)}
+                    placeholder="Fill Price"
                     className="w-full bg-slate-900 border border-slate-800 rounded px-3 py-2 text-white font-mono"
                   />
                 </div>
