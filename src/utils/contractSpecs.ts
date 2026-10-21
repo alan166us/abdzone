@@ -1,24 +1,10 @@
 /**
  * Centralized Contract Specifications & Point Values
  * Single source of truth for contract multipliers, point values, and deliverables.
+ *
+ * Futures detection is done here ONCE. Do not use startsWith()/includes() on raw
+ * tickers elsewhere: 'CLF', 'CLX', 'NCLH', 'ESTC', 'AES' etc. are equities, not futures.
  */
-
-export function getContractPointValue(ticker: string, isOption: boolean = false): number {
-  const clean = ticker.trim().toUpperCase().replace(/^\//, '');
-  if (clean.startsWith('MES')) return 5.0;   // Micro E-mini S&P 500 ($1.25/tick)
-  if (clean.startsWith('MNQ')) return 2.0;   // Micro E-mini Nasdaq 100 ($0.50/tick)
-  if (clean.startsWith('M2K')) return 5.0;   // Micro E-mini Russell 2000 ($0.50/tick)
-  if (clean.startsWith('MYM')) return 0.5;   // Micro E-mini Dow ($0.50/tick)
-  if (clean.startsWith('ES')) return 50.0;   // E-mini S&P 500 ($12.50/tick)
-  if (clean.startsWith('NQ')) return 20.0;   // E-mini Nasdaq 100 ($5.00/tick)
-  if (clean.startsWith('RTY')) return 50.0;  // E-mini Russell 2000 ($5.00/tick)
-  if (clean.startsWith('YM')) return 5.0;    // E-mini Dow ($5.00/tick)
-  if (clean.startsWith('CL')) return 1000.0; // Crude Oil ($10.00/cent)
-  if (clean.startsWith('GC')) return 100.0;  // Gold ($10.00/0.10)
-  
-  // Equity options have 100 share deliverables; outright equity shares have 1.0 point value ($1/point)
-  return isOption ? 100.0 : 1.0;
-}
 
 export interface ContractSpecs {
   assetClass: string;
@@ -29,111 +15,68 @@ export interface ContractSpecs {
   description: string;
 }
 
+const FUTURES_TABLE: Record<string, ContractSpecs> = {
+  MES: { assetClass: 'Futures Micro / Index', pointMultiplier: 5.0, tickSize: 0.25, tickValue: 1.25, tosSymbol: '/MES', description: 'Micro E-mini S&P 500 Index Futures' },
+  MNQ: { assetClass: 'Futures Micro / Index', pointMultiplier: 2.0, tickSize: 0.25, tickValue: 0.5, tosSymbol: '/MNQ', description: 'Micro E-mini Nasdaq-100 Futures' },
+  M2K: { assetClass: 'Futures Micro / Index', pointMultiplier: 5.0, tickSize: 0.1, tickValue: 0.5, tosSymbol: '/M2K', description: 'Micro E-mini Russell 2000 Futures' },
+  MYM: { assetClass: 'Futures Micro / Index', pointMultiplier: 0.5, tickSize: 1.0, tickValue: 0.5, tosSymbol: '/MYM', description: 'Micro E-mini Dow Futures' },
+  ES: { assetClass: 'Futures Standard / Index', pointMultiplier: 50.0, tickSize: 0.25, tickValue: 12.5, tosSymbol: '/ES', description: 'E-mini S&P 500 Index Futures' },
+  NQ: { assetClass: 'Futures Standard / Index', pointMultiplier: 20.0, tickSize: 0.25, tickValue: 5.0, tosSymbol: '/NQ', description: 'E-mini Nasdaq-100 Futures' },
+  RTY: { assetClass: 'Futures Standard / Index', pointMultiplier: 50.0, tickSize: 0.1, tickValue: 5.0, tosSymbol: '/RTY', description: 'E-mini Russell 2000 Futures' },
+  YM: { assetClass: 'Futures Standard / Index', pointMultiplier: 5.0, tickSize: 1.0, tickValue: 5.0, tosSymbol: '/YM', description: 'E-mini Dow Jones Futures' },
+  CL: { assetClass: 'Futures Commodity / Energy', pointMultiplier: 1000.0, tickSize: 0.01, tickValue: 10.0, tosSymbol: '/CL', description: 'Crude Oil Futures ($10/cent)' },
+  GC: { assetClass: 'Futures Commodity / Metals', pointMultiplier: 100.0, tickSize: 0.1, tickValue: 10.0, tosSymbol: '/GC', description: 'Gold Futures ($10/0.10)' },
+};
+
+// Root, optionally followed by a contract-month code + year ("ESZ6", "MESH26"),
+// a Yahoo-style "=F", or a TradingView-style continuous "1!". A leading "/" is optional.
+const FUTURES_REGEX = /^\/?(MES|MNQ|M2K|MYM|ES|NQ|RTY|YM|CL|GC)(?:[FGHJKMNQUVXZ]\d{1,4}|=F|\d!)?$/;
+
+function cleanTicker(ticker: string): string {
+  return (ticker || '').trim().toUpperCase().replace(/^(SCHWAB:|EXCHANGE:)/, '').trim();
+}
+
+/**
+ * Returns the futures root ('MES', 'ES', 'CL', ...) or null if the ticker is not a known future.
+ * Known limitation: bare 'ES' (Eversource) and 'CL' (Colgate-Palmolive) are real equity tickers too and
+ * are treated as futures. Always use the slash form ('/ES', '/CL') for futures to stay unambiguous.
+ */
+export function getFuturesRoot(ticker: string): string | null {
+  const m = FUTURES_REGEX.exec(cleanTicker(ticker));
+  return m ? m[1] : null;
+}
+
+export function isFuturesSymbol(symbol: string): boolean {
+  if (!symbol) return false;
+  return cleanTicker(symbol).startsWith('/') || getFuturesRoot(symbol) !== null;
+}
+
+/** S&P 500 family (ES / MES): used for 5-point strike snapping and price-scale sanity checks. */
+export function isSp500Futures(symbol: string): boolean {
+  const root = getFuturesRoot(symbol);
+  return root === 'ES' || root === 'MES';
+}
+
+/** Nasdaq-100 family (NQ / MNQ). */
+export function isNasdaqFutures(symbol: string): boolean {
+  const root = getFuturesRoot(symbol);
+  return root === 'NQ' || root === 'MNQ';
+}
+
+export function getContractPointValue(ticker: string, isOption: boolean = false): number {
+  const root = getFuturesRoot(ticker);
+  if (root) return FUTURES_TABLE[root].pointMultiplier;
+
+  // Equity options have 100 share deliverables; outright equity shares have 1.0 point value ($1/point)
+  return isOption ? 100.0 : 1.0;
+}
+
 export function getContractSpecs(ticker: string): ContractSpecs {
-  const clean = ticker.trim().toUpperCase().replace(/^(SCHWAB:|EXCHANGE:)/, '').trim();
+  const clean = cleanTicker(ticker);
+  const root = getFuturesRoot(clean);
+  if (root) return FUTURES_TABLE[root];
+
   const base = clean.replace(/^\//, '');
-
-  if (base.startsWith('MES')) {
-    return {
-      assetClass: 'Futures Micro / Index',
-      pointMultiplier: 5.0,
-      tickSize: 0.25,
-      tickValue: 1.25,
-      tosSymbol: '/MES',
-      description: 'Micro E-mini S&P 500 Index Futures',
-    };
-  }
-  if (base.startsWith('MNQ')) {
-    return {
-      assetClass: 'Futures Micro / Index',
-      pointMultiplier: 2.0,
-      tickSize: 0.25,
-      tickValue: 0.50,
-      tosSymbol: '/MNQ',
-      description: 'Micro E-mini Nasdaq-100 Futures',
-    };
-  }
-  if (base.startsWith('M2K')) {
-    return {
-      assetClass: 'Futures Micro / Index',
-      pointMultiplier: 5.0,
-      tickSize: 0.10,
-      tickValue: 0.50,
-      tosSymbol: '/M2K',
-      description: 'Micro E-mini Russell 2000 Futures',
-    };
-  }
-  if (base.startsWith('MYM')) {
-    return {
-      assetClass: 'Futures Micro / Index',
-      pointMultiplier: 0.5,
-      tickSize: 1.0,
-      tickValue: 0.50,
-      tosSymbol: '/MYM',
-      description: 'Micro E-mini Dow Futures',
-    };
-  }
-  if (base.startsWith('ES')) {
-    return {
-      assetClass: 'Futures Standard / Index',
-      pointMultiplier: 50.0,
-      tickSize: 0.25,
-      tickValue: 12.50,
-      tosSymbol: '/ES',
-      description: 'E-mini S&P 500 Index Futures',
-    };
-  }
-  if (base.startsWith('NQ')) {
-    return {
-      assetClass: 'Futures Standard / Index',
-      pointMultiplier: 20.0,
-      tickSize: 0.25,
-      tickValue: 5.00,
-      tosSymbol: '/NQ',
-      description: 'E-mini Nasdaq-100 Futures',
-    };
-  }
-  if (base.startsWith('RTY')) {
-    return {
-      assetClass: 'Futures Standard / Index',
-      pointMultiplier: 50.0,
-      tickSize: 0.10,
-      tickValue: 5.00,
-      tosSymbol: '/RTY',
-      description: 'E-mini Russell 2000 Futures',
-    };
-  }
-  if (base.startsWith('YM')) {
-    return {
-      assetClass: 'Futures Standard / Index',
-      pointMultiplier: 5.0,
-      tickSize: 1.0,
-      tickValue: 5.00,
-      tosSymbol: '/YM',
-      description: 'E-mini Dow Jones Futures',
-    };
-  }
-  if (base.startsWith('CL')) {
-    return {
-      assetClass: 'Futures Commodity / Energy',
-      pointMultiplier: 1000.0,
-      tickSize: 0.01,
-      tickValue: 10.00,
-      tosSymbol: '/CL',
-      description: 'Crude Oil Futures ($10/cent)',
-    };
-  }
-  if (base.startsWith('GC')) {
-    return {
-      assetClass: 'Futures Commodity / Metals',
-      pointMultiplier: 100.0,
-      tickSize: 0.10,
-      tickValue: 10.00,
-      tosSymbol: '/GC',
-      description: 'Gold Futures ($10/0.10)',
-    };
-  }
-
   const isEtf = ['SPY', 'QQQ', 'IWM', 'DIA', 'XLK', 'XLF', 'XLE', 'SMH', 'SPCX'].includes(base);
   return {
     assetClass: isEtf ? 'Index ETF / Equity' : 'US Equity',
