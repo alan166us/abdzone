@@ -21,7 +21,8 @@ import {
   Flame,
   Zap,
   Lock,
-  Activity
+  Activity,
+  Layers
 } from 'lucide-react';
 import { PWAInstallButton } from './PWAInstallButton';
 
@@ -35,6 +36,7 @@ interface TopNavProps {
   onStepCandle: () => void;
   onOpenImport: () => void;
   onOpenSchwab?: () => void;
+  onOpenTradier?: () => void;
   onOpenDiagnostics?: () => void;
   onOpenAiAnalyst: () => void;
   onOpenAiChat?: () => void;
@@ -97,6 +99,7 @@ export const TopNav: React.FC<TopNavProps> = ({
   onStepCandle,
   onOpenImport,
   onOpenSchwab,
+  onOpenTradier,
   onOpenDiagnostics,
   onOpenAiAnalyst,
   onOpenAiChat,
@@ -522,10 +525,31 @@ export const TopNav: React.FC<TopNavProps> = ({
                       </div>
                       <div>
                         <div className="text-xs font-semibold text-white group-hover:text-sky-300">Charles Schwab Trader API</div>
-                        <div className="text-[10px] text-slate-400">OAuth tokens, gateway keys &amp; live sync</div>
+                        <div className="text-[10px] text-slate-400">Primary feed · OAuth tokens, keys &amp; sync</div>
                       </div>
                     </div>
                     <span className="text-[10px] font-mono text-sky-400 group-hover:translate-x-0.5 transition-transform">Open &rarr;</span>
+                  </button>
+                )}
+
+                {onOpenTradier && (
+                  <button
+                    onClick={() => {
+                      setIsConfigOpen(false);
+                      onOpenTradier();
+                    }}
+                    className="w-full flex items-center justify-between p-2 rounded-lg bg-slate-900/80 hover:bg-slate-800/90 border border-slate-800 hover:border-amber-500/50 text-left transition-all group cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded bg-amber-950/80 border border-amber-800/80 flex items-center justify-center shrink-0 group-hover:border-amber-500">
+                        <Layers className="w-4 h-4 text-amber-400" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-semibold text-white group-hover:text-amber-300">Tradier Brokerage Backup Feed</div>
+                        <div className="text-[10px] text-slate-400">Secondary OPRA chains, tick bars &amp; token</div>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-mono text-amber-400 group-hover:translate-x-0.5 transition-transform">Open &rarr;</span>
                   </button>
                 )}
 

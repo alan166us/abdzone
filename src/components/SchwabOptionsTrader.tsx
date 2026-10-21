@@ -48,6 +48,7 @@ interface SchwabOptionsTraderProps {
   selectedRecommendation: TradeRecommendation | null;
   onSelectRecommendation: (rec: TradeRecommendation) => void;
   onOpenSchwabModal?: () => void;
+  onOpenTradierModal?: () => void;
   onOpenTosModal?: () => void;
   onOpenQaMonitor?: () => void;
   onLogToJournal?: (rec: TradeRecommendation) => void;
@@ -63,6 +64,7 @@ export const SchwabOptionsTrader: React.FC<SchwabOptionsTraderProps> = ({
   selectedRecommendation,
   onSelectRecommendation,
   onOpenSchwabModal,
+  onOpenTradierModal,
   onOpenTosModal,
   onOpenQaMonitor,
   onLogToJournal,
@@ -211,9 +213,20 @@ export const SchwabOptionsTrader: React.FC<SchwabOptionsTraderProps> = ({
           {onOpenSchwabModal && (
             <button
               onClick={onOpenSchwabModal}
-              className="px-3 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg transition-colors"
+              className="px-3 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg transition-colors cursor-pointer"
+              title="Configure Charles Schwab Primary API"
             >
-              API Settings
+              Schwab API
+            </button>
+          )}
+          {onOpenTradierModal && (
+            <button
+              onClick={onOpenTradierModal}
+              className="px-3 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5"
+              title="Configure Tradier Brokerage Secondary Backup Feed"
+            >
+              <Layers className="w-3.5 h-3.5 text-amber-400" />
+              <span>Tradier Feed</span>
             </button>
           )}
         </div>
