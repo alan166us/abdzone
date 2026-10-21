@@ -57,6 +57,9 @@ export interface SupplyDemandZone {
   proximityPhase?: ProximityPhase;
   distanceInAtr?: number;
   isRecentPrimary?: boolean;
+  isActiveTradeZone?: boolean;
+  isReferenceZone?: boolean;
+  referenceLabel?: string;
   notes: string;
 }
 

@@ -14,11 +14,12 @@ import {
   LineChart, 
   LayoutGrid, 
   Calculator, 
-  Layers 
+  Layers,
+  ShieldCheck 
 } from 'lucide-react';
 import { PWAInstallButton } from './PWAInstallButton';
 
-export type ActiveTab = 'chart' | 'options' | 'monitor' | 'radar' | 'journal' | 'volatility' | 'backtest' | 'sizer';
+export type ActiveTab = 'chart' | 'options' | 'auditor' | 'monitor' | 'radar' | 'journal' | 'volatility' | 'backtest' | 'sizer';
 
 interface TopNavProps {
   activeTab: ActiveTab;
@@ -72,6 +73,7 @@ const POPULAR_FUTURES = [
 
 // Secondary Research & Analysis Tools Metadata for Dropdown
 const SECONDARY_TOOLS: { id: ActiveTab; label: string; shortLabel: string; desc: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { id: 'auditor', label: 'Recommendation Auditor', shortLabel: 'Auditor', desc: '1-week forward audit tracking & statistical win/loss edge validation', icon: ShieldCheck },
   { id: 'journal', label: 'Trading Journal', shortLabel: 'Journal', desc: 'Trade log, win/loss stats & edge analysis', icon: BookOpen },
   { id: 'radar', label: 'Zone Radar Grid', shortLabel: 'Radar', desc: 'Multi-zone detection & freshness scanner', icon: LayoutGrid },
   { id: 'volatility', label: 'Volatility Matrix', shortLabel: 'Volatility', desc: 'IV rank, ATR buffers & historical distributions', icon: SlidersHorizontal },
@@ -346,6 +348,21 @@ export const TopNav: React.FC<TopNavProps> = ({
         >
           <Building2 className="w-3.5 h-3.5 text-sky-400 shrink-0" />
           <span>Options</span>
+        </button>
+
+        {/* TAB 4: Recommendation Auditor (Win/Loss Validation) */}
+        <button
+          onClick={() => onTabChange('auditor')}
+          className={`px-2.5 sm:px-3 py-1.5 rounded-md transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+            activeTab === 'auditor'
+              ? 'bg-purple-500/20 text-purple-300 font-semibold border border-purple-500/40 shadow-sm'
+              : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+          }`}
+          title="1-Week Forward Recommendation Auditor & Win/Loss Edge Validation"
+        >
+          <ShieldCheck className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+          <span>Auditor</span>
+          <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-purple-500/20 text-purple-300 font-bold hidden sm:inline">Win/Loss</span>
         </button>
 
         {/* TAB 4: Secondary Tools Dropdown (Journal, Radar, Volatility, Backtest, Risk Sizer) */}
