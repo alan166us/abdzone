@@ -4,9 +4,23 @@ import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-import { isFuturesSymbol, getFuturesRoot } from './src/utils/contractSpecs';
-
 dotenv.config();
+
+const FUTURES_REGEX = /^\/?(MES|MNQ|M2K|MYM|ES|NQ|RTY|YM|CL|GC)(?:[FGHJKMNQUVXZ]\d{1,4}|=F|\d!)?$/;
+
+function cleanTicker(ticker: string): string {
+  return (ticker || '').trim().toUpperCase().replace(/^(SCHWAB:|EXCHANGE:)/, '').trim();
+}
+
+function getFuturesRoot(ticker: string): string | null {
+  const m = FUTURES_REGEX.exec(cleanTicker(ticker));
+  return m ? m[1] : null;
+}
+
+function isFuturesSymbol(symbol: string): boolean {
+  if (!symbol) return false;
+  return cleanTicker(symbol).startsWith('/') || getFuturesRoot(symbol) !== null;
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -22,13 +36,61 @@ async function startServer() {
 
   app.use(express.json({ limit: '10mb' }));
 
-
+  // Health Check endpoints for Cloud Run & container deployment probes
+  app.get(['/healthz', '/api/health', '/health'], (_req, res) => {
+    res.status(200).json({
+      status: 'ok',
+      service: 'StrataZone',
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString(),
+    });
+  });
 
   // In-memory Schwab session state & QA Monitor Engine
   let activeSchwabToken = process.env.SCHWAB_ACCESS_TOKEN || '';
-  let activeSchwabRefreshToken = '';
+  let activeSchwabRefreshToken = process.env.SCHWAB_REFRESH_TOKEN || '';
   let activeSchwabAppKey = process.env.SCHWAB_APP_KEY || '';
   let activeSchwabSecret = process.env.SCHWAB_SECRET || '';
+
+  async function refreshSchwabToken(): Promise<string | null> {
+    const refreshToken = activeSchwabRefreshToken || process.env.SCHWAB_REFRESH_TOKEN;
+    const appKey = activeSchwabAppKey || process.env.SCHWAB_APP_KEY;
+    const secret = activeSchwabSecret || process.env.SCHWAB_SECRET;
+
+    if (!refreshToken || !appKey || !secret) {
+      return null;
+    }
+
+    try {
+      const authHeader = Buffer.from(`${appKey}:${secret}`).toString('base64');
+      const params = new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+      });
+
+      const tokenRes = await fetch('https://api.schwabapi.com/v1/oauth/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Authorization: `Basic ${authHeader}`,
+        },
+        body: params.toString(),
+      });
+
+      if (tokenRes.ok) {
+        const data: any = await tokenRes.json();
+        if (data.access_token) {
+          activeSchwabToken = data.access_token;
+          if (data.refresh_token) activeSchwabRefreshToken = data.refresh_token;
+          console.log('[Schwab API] OAuth access token refreshed successfully.');
+          return data.access_token;
+        }
+      }
+    } catch (err: any) {
+      console.warn('[Schwab API] Automatic token refresh failed:', err?.message || err);
+    }
+    return null;
+  }
 
   // Secondary Backup: Tradier Brokerage API (Markets & OPRA Options)
   let activeTradierToken = process.env.TRADIER_ACCESS_TOKEN || process.env.TRADIER_API_KEY || '';
@@ -701,12 +763,37 @@ async function startServer() {
               candles: resultCandles,
             });
           }
+        } else if (schwabRes.status === 401) {
+          // Token expired (HTTP 401). Try automatic token refresh if credentials available
+          const refreshedToken = await refreshSchwabToken();
+          if (refreshedToken) {
+            const retryRes = await fetch(schwabUrl, {
+              headers: {
+                Authorization: `Bearer ${refreshedToken}`,
+                Accept: 'application/json',
+              },
+            });
+            if (retryRes.ok) {
+              const retryData: any = await retryRes.json();
+              if (retryData && retryData.candles && retryData.candles.length > 0) {
+                return res.json({
+                  status: 'success',
+                  source: 'schwab-live-api',
+                  frequency: numFreq,
+                  symbol: retryData.symbol || cleanSym,
+                  candles: retryData.candles,
+                });
+              }
+            }
+          }
+          // Clear activeSchwabToken so it falls through to live exchange feed cleanly
+          activeSchwabToken = '';
         } else {
           const errText = await schwabRes.text();
           console.warn(`Schwab API responded ${schwabRes.status}:`, errText);
         }
       } catch (err: any) {
-        console.error('Schwab API live call error:', err?.message || err);
+        console.warn('Schwab API live call skipped:', err?.message || err);
       }
     }
 
