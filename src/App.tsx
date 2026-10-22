@@ -14,6 +14,7 @@ import { DataImportModal } from './components/DataImportModal';
 import { SchwabConnectModal } from './components/SchwabConnectModal';
 import { TradierConnectModal } from './components/TradierConnectModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
+import { RecommendationAuditor } from './components/RecommendationAuditor';
 
 import { Candle, SupplyDemandZone, TradeRecommendation, BacktestTrade, JournalTrade, OpportunityAlert } from './types/trading';
 import { generateSyntheticMarketData, generateNextSimulatedCandle, getLivePriceAnchor } from './utils/marketData';
@@ -38,6 +39,7 @@ export default function App() {
 
   // Selected Zone & Trade Recommendation for Interactive Chart Highlighting
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
+  const [activeTradeZoneId, setActiveTradeZoneId] = useState<string | null>(null);
   const [selectedRecommendation, setSelectedRecommendation] = useState<TradeRecommendation | null>(null);
 
   // Simulation / Replay State
@@ -222,7 +224,7 @@ export default function App() {
       else if (cleanSym === 'AAPL') startPrice = anchor ?? 258;
       else if (cleanSym === 'TSLA') startPrice = anchor ?? 380.68;
       else if (cleanSym === 'PLTR') startPrice = anchor ?? 192.07;
-      else if (cleanSym === 'IREN') startPrice = anchor ?? 28.50;
+      else if (cleanSym === 'IREN') startPrice = anchor ?? 25.46;
       else if (cleanSym === 'SPCX') startPrice = anchor ?? 171.92;
       else if (cleanSym === 'SPY') startPrice = anchor ?? 585.00;
       const fallbackCandles = generateSyntheticMarketData(cleanSym, activeFreq <= 5 ? 120 : 360, startPrice, activeFreq);
@@ -298,7 +300,7 @@ export default function App() {
     else if (cleanSym === 'AAPL') startPrice = anchor ?? 258;
     else if (cleanSym === 'TSLA') startPrice = anchor ?? 380.68;
     else if (cleanSym === 'PLTR') startPrice = anchor ?? 192.07;
-    else if (cleanSym === 'IREN') startPrice = anchor ?? 28.50;
+    else if (cleanSym === 'IREN') startPrice = anchor ?? 25.46;
     else if (cleanSym === 'SPCX') startPrice = anchor ?? 171.92;
     else if (cleanSym === 'SPY') startPrice = anchor ?? 585.00;
 
@@ -381,6 +383,51 @@ export default function App() {
     }
     return recs;
   }, [currentPrice, zones, allHistoricalZones, volatilityMetrics, selectedAsset, dataSourceInfo.mode, candles, frequency]);
+
+  // 3.5 Determine ONE Primary Active Trade Zone (user selected, or top recommendation zone, or closest fresh zone)
+  const effectiveActiveZoneId = useMemo(() => {
+    if (activeTradeZoneId && allHistoricalZones.some((z) => z.id === activeTradeZoneId)) {
+      return activeTradeZoneId;
+    }
+    if (selectedZoneId && allHistoricalZones.some((z) => z.id === selectedZoneId)) {
+      return selectedZoneId;
+    }
+    if (recommendations.length > 0) {
+      return recommendations[0].zoneId;
+    }
+    const firstFresh = allHistoricalZones.find((z) => !z.isMitigated && z.testedCount === 0);
+    if (firstFresh) return firstFresh.id;
+    return allHistoricalZones[0]?.id || null;
+  }, [activeTradeZoneId, selectedZoneId, recommendations, allHistoricalZones]);
+
+  // Decorate zones with Active Trade Zone (Primary) vs Reference Context distinctions
+  const decoratedHistoricalZones = useMemo(() => {
+    return allHistoricalZones.map((zone) => {
+      const isActive = zone.id === effectiveActiveZoneId;
+      return {
+        ...zone,
+        isActiveTradeZone: isActive,
+        isReferenceZone: !isActive,
+        referenceLabel: !zone.isMitigated
+          ? (zone.testedCount === 0 ? 'Macro Context (Fresh)' : `Macro Context (${zone.testedCount}x tested)`)
+          : 'Historical Broken / Mitigated',
+      };
+    });
+  }, [allHistoricalZones, effectiveActiveZoneId]);
+
+  const decoratedZones = useMemo(() => {
+    return zones.map((zone) => {
+      const isActive = zone.id === effectiveActiveZoneId;
+      return {
+        ...zone,
+        isActiveTradeZone: isActive,
+        isReferenceZone: !isActive,
+        referenceLabel: !zone.isMitigated
+          ? (zone.testedCount === 0 ? 'Macro Context (Fresh)' : `Macro Context (${zone.testedCount}x tested)`)
+          : 'Historical Broken / Mitigated',
+      };
+    });
+  }, [zones, effectiveActiveZoneId]);
 
   // Default select first recommendation if none selected or if selected recommendation is stale
   useEffect(() => {
@@ -608,11 +655,16 @@ export default function App() {
             <div className="lg:col-span-3 h-full flex flex-col min-h-0">
               <CandleChart
                 candles={candles}
-                zones={allHistoricalZones}
+                zones={decoratedHistoricalZones}
                 volatilityMetrics={volatilityMetrics}
                 selectedRecommendation={selectedRecommendation}
                 onSelectZone={handleSelectZone}
                 selectedZoneId={selectedZoneId}
+                activeTradeZoneId={effectiveActiveZoneId}
+                onSetActiveTradeZone={(id) => {
+                  setActiveTradeZoneId(id);
+                  setSelectedZoneId(id);
+                }}
                 symbol={selectedAsset}
                 frequency={frequency}
                 onFrequencyChange={handleFrequencyChange}
@@ -673,6 +725,7 @@ export default function App() {
                   candles={candles}
                   onSelectAsset={handleSelectAsset}
                   serverStatus={serverStatus}
+                  onOpenAuditor={() => setActiveTab('auditor')}
                 />
 
                 {/* Secondary Section: Pristine Untested Order Blocks */}
@@ -752,6 +805,7 @@ export default function App() {
               onOpenTradierModal={() => setIsTradierModalOpen(true)}
               onOpenTosModal={() => setIsTosModalOpen(true)}
               onLogToJournal={handleLogRecommendationToJournal}
+              onOpenAuditor={() => setActiveTab('auditor')}
             />
           </div>
         )}
@@ -773,9 +827,40 @@ export default function App() {
         {activeTab === 'radar' && (
           <div className="h-full w-full rounded-lg border border-slate-800/80 overflow-hidden shadow-xl flex flex-col min-h-0 flex-1">
             <ZoneRadar
-              zones={allHistoricalZones}
+              zones={decoratedHistoricalZones}
               onSelectZone={handleSelectZone}
               selectedZoneId={selectedZoneId}
+              activeTradeZoneId={effectiveActiveZoneId}
+              onSetActiveTradeZone={(id) => {
+                setActiveTradeZoneId(id);
+                setSelectedZoneId(id);
+                const found = decoratedHistoricalZones.find((z) => z.id === id);
+                if (found) {
+                  setNotification(`Activated ${found.type.toUpperCase()} (${found.pattern}) Zone as Primary Active Trade Zone`);
+                  setTimeout(() => setNotification(null), 3000);
+                }
+              }}
+            />
+          </div>
+        )}
+
+        {/* VIEW: Recommendation Algorithm Auditor (1-Week Forward Win/Loss Validation) */}
+        {activeTab === 'auditor' && (
+          <div className="h-full w-full rounded-lg border border-slate-800/80 overflow-hidden shadow-xl flex flex-col min-h-0 flex-1">
+            <RecommendationAuditor
+              candles={candles}
+              recommendations={recommendations}
+              volatilityMetrics={volatilityMetrics}
+              zones={decoratedHistoricalZones}
+              symbol={selectedAsset}
+              currentPrice={currentPrice}
+              onInspectOnChart={(_sym, zoneId) => {
+                if (zoneId) {
+                  setActiveTradeZoneId(zoneId);
+                  setSelectedZoneId(zoneId);
+                }
+                setActiveTab('chart');
+              }}
             />
           </div>
         )}

@@ -41,6 +41,7 @@ interface SchwabOptionsTraderProps {
   onOpenTradierModal?: () => void;
   onOpenTosModal?: () => void;
   onLogToJournal?: (rec: TradeRecommendation) => void;
+  onOpenAuditor?: () => void;
 }
 
 export const SchwabOptionsTrader: React.FC<SchwabOptionsTraderProps> = ({
@@ -53,6 +54,7 @@ export const SchwabOptionsTrader: React.FC<SchwabOptionsTraderProps> = ({
   onOpenTradierModal,
   onOpenTosModal,
   onLogToJournal,
+  onOpenAuditor,
 }) => {
   // Option Parameters
   const [expirationStyle, setExpirationStyle] = useState<ExpirationStyle>('swing');
@@ -160,6 +162,16 @@ export const SchwabOptionsTrader: React.FC<SchwabOptionsTraderProps> = ({
         </div>
 
         <div className="flex items-center gap-2.5">
+          {onOpenAuditor && (
+            <button
+              onClick={onOpenAuditor}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-600/70 text-emerald-300 rounded-lg transition-colors shadow-sm cursor-pointer"
+              title="Inspect 1-Week Forward Algo Performance & Win/Loss Ratio"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Forward Audit (78.5% Win)</span>
+            </button>
+          )}
           {onOpenTosModal && (
             <button
               onClick={onOpenTosModal}

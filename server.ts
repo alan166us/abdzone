@@ -610,11 +610,12 @@ async function startServer() {
   });
 
   // Fetch Schwab & Real-Time Exchange Price History for Candlesticks
-  app.post('/api/schwab/price-history', async (req, res) => {
-    const { symbol = 'SPY', frequency = 60 } = req.body;
+  app.all('/api/schwab/price-history', async (req, res) => {
+    const symbolParam = req.body?.symbol || req.query?.symbol || 'SPY';
+    const freqParam = req.body?.frequency || req.query?.frequency || 60;
     const token = activeSchwabToken || process.env.SCHWAB_ACCESS_TOKEN;
-    const cleanSym = String(symbol).toUpperCase().trim();
-    const numFreq = typeof frequency === 'number' ? frequency : parseInt(String(frequency), 10) || 60;
+    const cleanSym = String(symbolParam).toUpperCase().trim();
+    const numFreq = typeof freqParam === 'number' ? freqParam : parseInt(String(freqParam), 10) || 60;
 
     // 1. Try Official Charles Schwab Trader API if token exists
     if (token) {
@@ -758,7 +759,7 @@ async function startServer() {
       }
     }
 
-    // 3. High-fidelity Option Contract & Deterministic Dynamic Generator
+    // Check if symbol is an options contract
     const isOptionContract = 
       cleanSym.includes('C0') || 
       cleanSym.includes('P0') || 
@@ -767,6 +768,135 @@ async function startServer() {
       cleanSym.endsWith('C') || 
       cleanSym.endsWith('P');
 
+    // 3. Real-Time Market Exchange Feed (Live Candlesticks & Quotes)
+    if (!isOptionContract) {
+      try {
+        const mapToExchangeSymbol = (sym: string): string => {
+          const s = sym.toUpperCase().trim();
+          if (s === '/MES' || s === 'MES' || s === '/ES' || s === 'ES') return 'ES=F';
+          if (s === '/MNQ' || s === 'MNQ' || s === '/NQ' || s === 'NQ') return 'NQ=F';
+          if (s === '/MYM' || s === 'MYM' || s === '/YM' || s === 'YM') return 'YM=F';
+          if (s === '/M2K' || s === 'M2K' || s === '/RTY' || s === 'RTY') return 'RTY=F';
+          if (s === '/CL' || s === 'CL') return 'CL=F';
+          if (s === '/GC' || s === 'GC') return 'GC=F';
+          if (s.includes('BTC')) return 'BTC-USD';
+          if (s.includes('ETH')) return 'ETH-USD';
+          return s.replace(/^\//, '');
+        };
+
+        const targetExchangeSym = mapToExchangeSymbol(cleanSym);
+
+        let interval = '15m';
+        let range = '5d';
+        if (numFreq === 1) {
+          interval = '1m';
+          range = '2d';
+        } else if (numFreq === 5) {
+          interval = '5m';
+          range = '5d';
+        } else if (numFreq === 15) {
+          interval = '15m';
+          range = '5d';
+        } else if (numFreq === 30) {
+          interval = '30m';
+          range = '10d';
+        } else if (numFreq === 60) {
+          interval = '60m';
+          range = '1mo';
+        } else if (numFreq === 240) {
+          interval = '60m';
+          range = '3mo';
+        } else if (numFreq >= 1440) {
+          interval = '1d';
+          range = '1y';
+        }
+
+        const exchangeUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(targetExchangeSym)}?interval=${interval}&range=${range}`;
+        const exchangeRes = await fetch(exchangeUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/json',
+          },
+        });
+
+        if (exchangeRes.ok) {
+          const exchangeData: any = await exchangeRes.json();
+          const chartResult = exchangeData?.chart?.result?.[0];
+          if (chartResult && chartResult.timestamp && chartResult.timestamp.length > 0) {
+            const timestamps: number[] = chartResult.timestamp;
+            const quote = chartResult.indicators?.quote?.[0] || {};
+            const opens: (number | null)[] = quote.open || [];
+            const highs: (number | null)[] = quote.high || [];
+            const lows: (number | null)[] = quote.low || [];
+            const closes: (number | null)[] = quote.close || [];
+            const volumes: (number | null)[] = quote.volume || [];
+
+            let rawCandles: any[] = [];
+            for (let i = 0; i < timestamps.length; i++) {
+              const t = timestamps[i];
+              let o = opens[i];
+              let h = highs[i];
+              let l = lows[i];
+              let c = closes[i];
+              const v = volumes[i] || 1000;
+
+              if (c == null && o == null) continue;
+              if (c == null && o != null) c = o;
+              if (o == null && c != null) o = c;
+              if (h == null && o != null && c != null) h = Math.max(o, c);
+              if (l == null && o != null && c != null) l = Math.min(o, c);
+
+              if (t && o != null && c != null && h != null && l != null && !isNaN(o) && !isNaN(c) && !isNaN(h) && !isNaN(l)) {
+                rawCandles.push({
+                  datetime: t * 1000,
+                  open: Number(o.toFixed(2)),
+                  high: Number(h.toFixed(2)),
+                  low: Number(l.toFixed(2)),
+                  close: Number(c.toFixed(2)),
+                  volume: Math.round(v),
+                });
+              }
+            }
+
+            // Aggregate 60m candles into 4-Hour if requested
+            if (numFreq === 240 && rawCandles.length > 0) {
+              const aggregated: any[] = [];
+              for (let i = 0; i < rawCandles.length; i += 4) {
+                const chunk = rawCandles.slice(i, i + 4);
+                const first = chunk[0];
+                const last = chunk[chunk.length - 1];
+                aggregated.push({
+                  datetime: first.datetime,
+                  open: first.open,
+                  high: Math.max(...chunk.map((b) => b.high)),
+                  low: Math.min(...chunk.map((b) => b.low)),
+                  close: last.close,
+                  volume: chunk.reduce((acc, b) => acc + (b.volume || 0), 0),
+                });
+              }
+              rawCandles = aggregated;
+            }
+
+            if (rawCandles.length > 5) {
+              return res.json({
+                status: 'success',
+                source: 'exchange-live-feed',
+                isRealtime: true,
+                frequency: numFreq,
+                symbol: cleanSym,
+                candles: rawCandles,
+              });
+            }
+          }
+        } else {
+          console.warn(`Exchange chart feed returned status ${exchangeRes.status} for ${cleanSym}`);
+        }
+      } catch (exchangeErr: any) {
+        console.warn('Live exchange feed error, falling back to simulated engine:', exchangeErr?.message || exchangeErr);
+      }
+    }
+
+    // 4. High-fidelity Option Contract & Deterministic Dynamic Generator
     // Always uses real-world base price and real CURRENT date/time
     let basePrice = isOptionContract ? 4.25 : 767.50;
     if (cleanSym.includes('MES') || cleanSym.includes('ES')) basePrice = 7740.00;
@@ -780,7 +910,7 @@ async function startServer() {
     else if (cleanSym === 'AAPL') basePrice = 343.50;
     else if (cleanSym === 'TSLA') basePrice = 367.00;
     else if (cleanSym === 'PLTR') basePrice = 194.14;
-    else if (cleanSym === 'IREN') basePrice = 27.50;
+    else if (cleanSym === 'IREN') basePrice = 25.46;
     else if (cleanSym === 'SPCX') basePrice = 171.92;
     else if (cleanSym === 'SPY') basePrice = 767.50;
 

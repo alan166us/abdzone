@@ -64,6 +64,8 @@ interface CandleChartProps {
   selectedRecommendation: TradeRecommendation | null;
   onSelectZone: (zone: SupplyDemandZone) => void;
   selectedZoneId?: string | null;
+  activeTradeZoneId?: string | null;
+  onSetActiveTradeZone?: (zoneId: string) => void;
   symbol: string;
   frequency?: number;
   onFrequencyChange?: (frequency: number) => void;
@@ -79,6 +81,8 @@ export const CandleChart: React.FC<CandleChartProps> = ({
   selectedRecommendation,
   onSelectZone,
   selectedZoneId,
+  activeTradeZoneId,
+  onSetActiveTradeZone,
   symbol,
   frequency = 60,
   onFrequencyChange,
@@ -124,6 +128,7 @@ export const CandleChart: React.FC<CandleChartProps> = ({
   // Layer Visibility Toggles
   const [showDemand, setShowDemand] = useState<boolean>(true);
   const [showSupply, setShowSupply] = useState<boolean>(true);
+  const [showReferenceZones, setShowReferenceZones] = useState<boolean>(true);
   const [recentOnlyZones, setRecentOnlyZones] = useState<boolean>(true);
   const [showMitigated, setShowMitigated] = useState<boolean>(false);
   const [showVwap, setShowVwap] = useState<boolean>(true);
@@ -428,10 +433,16 @@ export const CandleChart: React.FC<CandleChartProps> = ({
       const isHovered = hoveredZone?.id === zone.id;
       const isDemand = zone.type === 'demand';
 
-      // --- Dynamic Conviction Opacity Engine ---
-      // Distinguish institutional conviction by combining freshness (testedCount) and departure velocity:
-      // High departureVelocity (>= 1.6x ATR) and 0 tests indicate massive unfulfilled limit order imbalances.
-      // Repeatedly tested zones (testedCount >= 2) indicate liquidity exhaustion.
+      // Distinguish the ONE Primary Active Trade Zone vs earlier Reference Context Zones
+      const isActiveTrade = zone.isActiveTradeZone || (activeTradeZoneId ? zone.id === activeTradeZoneId : false);
+      const isReference = zone.isReferenceZone || !isActiveTrade;
+
+      // When "Active Zone Only" mode is toggled, hide all reference context zones
+      if (!showReferenceZones && !isActiveTrade) {
+        continue;
+      }
+
+      // --- Dynamic Conviction & Hierarchy Opacity Engine ---
       const velocity = zone.departureVelocity || 1.2;
       const velocityMultiplier = Math.min(1.50, Math.max(0.65, 0.65 + (velocity - 1.0) * 0.45));
 
@@ -448,48 +459,41 @@ export const CandleChart: React.FC<CandleChartProps> = ({
         freshnessMultiplier = 0.18;
       }
 
-      // Calculate fill and border alpha with distinctive tiers
-      let fillAlpha = 0.22 * velocityMultiplier * freshnessMultiplier;
-      let borderAlpha = 0.80 * freshnessMultiplier * Math.min(1.2, velocityMultiplier);
+      // Fill & Border Opacity calculated based on Active vs Reference
+      let fillAlpha: number;
+      let borderAlpha: number;
 
-      const isHighConviction = !zone.isMitigated && zone.testedCount === 0 && velocity >= 1.6;
-      const isDepleted = !zone.isMitigated && zone.testedCount >= 2;
-
-      if (isHighConviction) {
-        fillAlpha = Math.max(0.34, fillAlpha * 1.35);
-        borderAlpha = Math.max(0.92, borderAlpha * 1.15);
-      } else if (isDepleted) {
-        fillAlpha = Math.min(0.08, fillAlpha);
-        borderAlpha = Math.min(0.38, borderAlpha);
-      }
-
-      if (isSelected) {
-        fillAlpha = Math.max(0.42, fillAlpha + 0.18);
+      if (isActiveTrade) {
+        // High visibility, saturated fill and solid glowing border for the ONE trade execution zone
+        fillAlpha = Math.max(0.32, 0.38 * velocityMultiplier * freshnessMultiplier);
         borderAlpha = 1.0;
-      } else if (isHovered) {
-        fillAlpha = Math.max(0.30, fillAlpha + 0.10);
-        borderAlpha = Math.min(1.0, borderAlpha + 0.25);
+        if (isSelected) fillAlpha = Math.min(0.48, fillAlpha + 0.12);
+        if (isHovered) fillAlpha = Math.min(0.48, fillAlpha + 0.08);
+      } else {
+        // Muted, non-distracting translucent reference context styling
+        fillAlpha = zone.isMitigated ? 0.03 : 0.06;
+        borderAlpha = zone.isMitigated ? 0.20 : 0.40;
+        if (isSelected) {
+          fillAlpha = 0.18;
+          borderAlpha = 0.75;
+        } else if (isHovered) {
+          fillAlpha = 0.14;
+          borderAlpha = 0.65;
+        }
       }
 
-      if (zone.isMitigated) {
-        fillAlpha = 0.04;
-        borderAlpha = 0.22;
-      }
-
-      fillAlpha = Math.max(0.03, Math.min(0.48, fillAlpha));
+      fillAlpha = Math.max(0.02, Math.min(0.50, fillAlpha));
       borderAlpha = Math.max(0.18, Math.min(1.0, borderAlpha));
 
-      // Fill style: High conviction zones feature a directional gradient emphasizing the proximal entry line
-      if (isHighConviction && !zone.isMitigated) {
+      // Fill style: Active Trade Zone features saturated directional gradient emphasizing the entry line
+      if (isActiveTrade && !zone.isMitigated) {
         const grad = ctx.createLinearGradient(0, topY, 0, bottomY);
         if (isDemand) {
-          // In demand, proximal entry level is topY (high)
-          grad.addColorStop(0, `rgba(16, 185, 129, ${Number((fillAlpha * 1.40).toFixed(3))})`);
-          grad.addColorStop(1, `rgba(16, 185, 129, ${Number((fillAlpha * 0.65).toFixed(3))})`);
+          grad.addColorStop(0, `rgba(16, 185, 129, ${Number((fillAlpha * 1.35).toFixed(3))})`);
+          grad.addColorStop(1, `rgba(16, 185, 129, ${Number((fillAlpha * 0.70).toFixed(3))})`);
         } else {
-          // In supply, proximal entry level is bottomY (low)
-          grad.addColorStop(0, `rgba(244, 63, 94, ${Number((fillAlpha * 0.65).toFixed(3))})`);
-          grad.addColorStop(1, `rgba(244, 63, 94, ${Number((fillAlpha * 1.40).toFixed(3))})`);
+          grad.addColorStop(0, `rgba(244, 63, 94, ${Number((fillAlpha * 0.70).toFixed(3))})`);
+          grad.addColorStop(1, `rgba(244, 63, 94, ${Number((fillAlpha * 1.35).toFixed(3))})`);
         }
         ctx.fillStyle = grad;
       } else {
@@ -506,28 +510,26 @@ export const CandleChart: React.FC<CandleChartProps> = ({
       // Draw Zone Box
       ctx.fillRect(drawLeft, topY, drawWidth, zoneH);
 
-      // Border line thickness and dash
+      // Border line thickness and dash: Solid for Active Trade Zone; Dashed for Reference Context
       if (zone.isMitigated) {
         ctx.lineWidth = 1;
         ctx.setLineDash([4, 4]);
-      } else if (isHighConviction) {
-        ctx.lineWidth = isSelected ? 2.8 : 2.0;
-        ctx.setLineDash([]);
-      } else if (isDepleted) {
-        ctx.lineWidth = 1;
-        ctx.setLineDash([3, 3]);
+      } else if (isActiveTrade) {
+        ctx.lineWidth = isSelected ? 3.0 : 2.4;
+        ctx.setLineDash([]); // Solid border for Active Trade Zone
       } else {
-        ctx.lineWidth = isSelected ? 2.2 : 1.2;
-        ctx.setLineDash([]);
+        // Reference Context Zone: clean dashed border
+        ctx.lineWidth = isSelected ? 1.8 : 1.2;
+        ctx.setLineDash([4, 4]);
       }
 
       ctx.strokeRect(drawLeft, topY, drawWidth, zoneH);
 
-      // Proximal edge luminous hairline for high conviction zones
-      if (isHighConviction && !zone.isMitigated) {
+      // Proximal edge laser line for Active Trade Zone
+      if (isActiveTrade && !zone.isMitigated) {
         const proximalY = isDemand ? topY : bottomY;
-        ctx.strokeStyle = isDemand ? 'rgba(52, 211, 153, 0.95)' : 'rgba(251, 113, 133, 0.95)';
-        ctx.lineWidth = 2.2;
+        ctx.strokeStyle = isDemand ? 'rgba(52, 211, 153, 1.0)' : 'rgba(251, 113, 133, 1.0)';
+        ctx.lineWidth = 2.8;
         ctx.setLineDash([]);
         ctx.beginPath();
         ctx.moveTo(drawLeft, proximalY);
@@ -537,8 +539,8 @@ export const CandleChart: React.FC<CandleChartProps> = ({
 
       // Equilibrium Midline (50%)
       const midY = (topY + bottomY) / 2;
-      ctx.setLineDash([2, 3]);
-      const eqAlpha = Math.max(0.22, borderAlpha * 0.65);
+      ctx.setLineDash(isActiveTrade ? [3, 3] : [2, 4]);
+      const eqAlpha = isActiveTrade ? Math.max(0.35, borderAlpha * 0.70) : 0.20;
       ctx.strokeStyle = isDemand ? `rgba(16, 185, 129, ${eqAlpha.toFixed(2)})` : `rgba(244, 63, 94, ${eqAlpha.toFixed(2)})`;
       ctx.beginPath();
       ctx.moveTo(drawLeft, midY);
@@ -546,23 +548,22 @@ export const CandleChart: React.FC<CandleChartProps> = ({
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Zone Tag / Conviction Badge Label
-      let convictionLabel = '';
-      if (zone.isMitigated) {
-        convictionLabel = 'MITIGATED';
-      } else if (isHighConviction) {
-        convictionLabel = `★ HIGH CONVICTION · ${velocity.toFixed(1)}x ATR · FRESH (0-TEST)`;
-      } else if (zone.testedCount === 0) {
-        convictionLabel = `FRESH · ${velocity.toFixed(1)}x ATR`;
-      } else if (zone.testedCount === 1) {
-        convictionLabel = `TESTED 1X · ${velocity.toFixed(1)}x ATR`;
+      // Zone Tag & Conviction Badge Label
+      let tagText = '';
+      if (isActiveTrade) {
+        let convictionLabel = '';
+        if (zone.isMitigated) convictionLabel = 'MITIGATED';
+        else if (zone.testedCount === 0) convictionLabel = `FRESH · ${velocity.toFixed(1)}x ATR`;
+        else convictionLabel = `TESTED ${zone.testedCount}x`;
+
+        tagText = `🎯 ACTIVE TRADE [${isDemand ? 'DEMAND' : 'SUPPLY'} ${zone.pattern}] · ${convictionLabel}`;
       } else {
-        convictionLabel = `DEPLETED · TESTED ${zone.testedCount}X`;
+        const refLabel = zone.referenceLabel || (zone.testedCount === 0 ? 'Macro Context' : `Prior Level (${zone.testedCount}x tested)`);
+        tagText = `📐 REF [${isDemand ? 'DZ' : 'SZ'} ${zone.pattern}] · ${refLabel}`;
       }
 
-      const tagText = `${isDemand ? 'DEMAND' : 'SUPPLY'} [${zone.pattern}] · ${convictionLabel}`;
-      ctx.font = 'bold 9px "JetBrains Mono", monospace';
-      const tagWidth = ctx.measureText(tagText).width + 10;
+      ctx.font = isActiveTrade ? 'bold 9.5px "JetBrains Mono", monospace' : '9px "JetBrains Mono", monospace';
+      const tagWidth = ctx.measureText(tagText).width + (isActiveTrade ? 12 : 8);
       const tagX = Math.min(currentChartWidth - tagWidth - 8, Math.max(rawZoneLeft + 6, 8));
       let tagY = topY + 11;
 
@@ -576,10 +577,18 @@ export const CandleChart: React.FC<CandleChartProps> = ({
       drawnTags.push({ x: tagX, y: tagY, w: tagWidth, h: 12 });
 
       // Tag pill background with conviction styling
-      const tagBgAlpha = isHighConviction ? 0.95 : (zone.isMitigated ? 0.60 : (isDepleted ? 0.70 : 0.85));
-      ctx.fillStyle = isDemand ? `rgba(6, 78, 59, ${tagBgAlpha})` : `rgba(136, 19, 55, ${tagBgAlpha})`;
-      ctx.fillRect(tagX - 2, tagY - 9, tagWidth, 12);
-      ctx.fillStyle = isDemand ? (isHighConviction ? '#6EE7B7' : (isDepleted ? '#6EE7B7/60' : '#A7F3D0')) : (isHighConviction ? '#FDA4AF' : (isDepleted ? '#FDA4AF/60' : '#FECDD3'));
+      if (isActiveTrade) {
+        ctx.fillStyle = isDemand ? 'rgba(6, 78, 59, 0.95)' : 'rgba(136, 19, 55, 0.95)';
+        ctx.fillRect(tagX - 2, tagY - 9, tagWidth, 13);
+        ctx.strokeStyle = isDemand ? 'rgba(52, 211, 153, 0.80)' : 'rgba(251, 113, 133, 0.80)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(tagX - 2, tagY - 9, tagWidth, 13);
+        ctx.fillStyle = isDemand ? '#6EE7B7' : '#FDA4AF';
+      } else {
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+        ctx.fillRect(tagX - 2, tagY - 9, tagWidth, 12);
+        ctx.fillStyle = '#94A3B8';
+      }
       ctx.fillText(tagText, tagX + 3, tagY);
 
       // Right axis price pills when hovered or selected
@@ -1278,10 +1287,21 @@ export const CandleChart: React.FC<CandleChartProps> = ({
           {hoveredZone && (
             <div className="hidden lg:flex items-center gap-1.5 bg-slate-900/90 px-2.5 py-1 rounded border border-slate-800 text-slate-300">
               <span className={hoveredZone.type === 'demand' ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
-                {hoveredZone.type === 'demand' ? 'Demand' : 'Supply'} ({hoveredZone.pattern}):
+                {hoveredZone.id === activeTradeZoneId || hoveredZone.isActiveTradeZone ? '🎯 ACTIVE TRADE ZONE' : '📐 Reference Context'} ({hoveredZone.pattern}):
               </span>
               <span>${hoveredZone.low.toFixed(2)} - ${hoveredZone.high.toFixed(2)}</span>
-              <span className="text-slate-500">· Score {hoveredZone.strengthScore}%</span>
+              {hoveredZone.id !== activeTradeZoneId && !hoveredZone.isActiveTradeZone && onSetActiveTradeZone && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSetActiveTradeZone(hoveredZone.id);
+                  }}
+                  className="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer transition-colors shadow-sm"
+                  title="Make this the primary active trade zone for execution"
+                >
+                  ⚡ Set as Active
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -1314,6 +1334,19 @@ export const CandleChart: React.FC<CandleChartProps> = ({
           </button>
 
           <div className="w-[1px] h-4 bg-slate-800 mx-0.5 shrink-0" />
+
+          {/* Active Trade Zone vs Reference Toggle */}
+          <button
+            onClick={() => setShowReferenceZones(!showReferenceZones)}
+            className={`px-2 py-1 text-[10px] font-medium rounded transition-colors shrink-0 whitespace-nowrap flex items-center gap-1 ${
+              showReferenceZones
+                ? 'bg-purple-950/80 text-purple-300 border border-purple-800/60 font-semibold'
+                : 'bg-emerald-950/90 text-emerald-300 border border-emerald-500/80 font-bold shadow-sm'
+            }`}
+            title={showReferenceZones ? "Showing 1 Active Trade Zone + Muted Reference Context Zones. Click to show ONLY the 1 Active Trade Zone." : "Showing ONLY 1 Active Trade Zone. Click to display reference context zones."}
+          >
+            <span>{showReferenceZones ? '🎯 1 Active + 📐 Ref' : '🎯 1 Active Zone Only'}</span>
+          </button>
 
           {/* Layer toggles */}
           <button

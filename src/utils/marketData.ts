@@ -58,7 +58,7 @@ export const ASSET_PRESETS: AssetPreset[] = [
 ];
 
 export const LIVE_PRICE_ANCHORS: Record<string, number> = {
-  'IREN': 27.50,
+  'IREN': 25.46,
   'SPY': 767.50,
   'QQQ': 719.00,
   '/MES': 7740.00,

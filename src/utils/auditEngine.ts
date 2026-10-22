@@ -566,10 +566,12 @@ export function createAuditSnapshotFromRecommendation(
   // Generate real option play contract recommendations
   const optionPlay = generateSchwabOptionPlay(
     rec,
+    rec.symbol,
     volatilityMetrics,
-    currentPrice,
-    'swing',
-    'ITM'
+    {
+      expirationStyle: 'swing',
+      strikeBias: 'ITM',
+    }
   );
 
   const zoneRangeStr = zone
@@ -597,14 +599,14 @@ export function createAuditSnapshotFromRecommendation(
     takeProfit2Price: rec.takeProfit2,
     riskRewardRatio: rec.riskRewardRatio,
     hasOptionPlay: Boolean(optionPlay),
-    optionSymbol: optionPlay?.contractSymbol,
+    optionSymbol: optionPlay?.occSymbol,
     optionStrike: optionPlay?.strike,
     optionType: optionPlay?.optionType,
-    optionExpiration: optionPlay?.expirationDate,
+    optionExpiration: optionPlay?.expirationStr,
     recommendedEntryPremium: optionPlay?.entry.premium,
-    recommendedTarget1Premium: optionPlay?.takeProfit1.targetPremium,
-    recommendedTarget2Premium: optionPlay?.takeProfit2.targetPremium,
-    recommendedStopLossPremium: optionPlay?.stopLoss.stopPremium,
+    recommendedTarget1Premium: optionPlay?.target.tp1.premium,
+    recommendedTarget2Premium: optionPlay?.target.tp2.premium,
+    recommendedStopLossPremium: optionPlay?.stopLoss.premium,
     contracts: 2,
     status: 'PENDING_EVALUATION',
     outcome: 'PENDING',

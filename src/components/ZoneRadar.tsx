@@ -6,17 +6,24 @@ interface ZoneRadarProps {
   zones: SupplyDemandZone[];
   onSelectZone: (zone: SupplyDemandZone) => void;
   selectedZoneId?: string | null;
+  activeTradeZoneId?: string | null;
+  onSetActiveTradeZone?: (zoneId: string) => void;
 }
 
 export const ZoneRadar: React.FC<ZoneRadarProps> = ({
   zones,
   onSelectZone,
   selectedZoneId,
+  activeTradeZoneId,
+  onSetActiveTradeZone,
 }) => {
-  const [filterType, setFilterType] = useState<'recent' | 'all' | 'demand' | 'supply' | 'fresh' | 'mitigated'>('recent');
+  const [filterType, setFilterType] = useState<'recent' | 'all' | 'activeOnly' | 'reference' | 'demand' | 'supply' | 'fresh' | 'mitigated'>('recent');
 
   const filteredZones = zones.filter(z => {
-    if (filterType === 'recent') return z.isRecentPrimary;
+    const isActive = z.isActiveTradeZone || (activeTradeZoneId ? z.id === activeTradeZoneId : false);
+    if (filterType === 'activeOnly') return isActive;
+    if (filterType === 'reference') return !isActive;
+    if (filterType === 'recent') return z.isRecentPrimary || isActive;
     if (filterType === 'demand') return z.type === 'demand';
     if (filterType === 'supply') return z.type === 'supply';
     if (filterType === 'fresh') return !z.isMitigated && z.testedCount === 0;
@@ -36,14 +43,30 @@ export const ZoneRadar: React.FC<ZoneRadarProps> = ({
         </div>
 
         {/* Filter Buttons */}
-        <div className="flex items-center gap-1.5 p-1 bg-slate-900 border border-slate-800 rounded-lg text-xs">
+        <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-900 border border-slate-800 rounded-lg text-xs">
+          <button
+            onClick={() => setFilterType('activeOnly')}
+            className={`px-3 py-1.5 font-medium rounded transition-colors ${
+              filterType === 'activeOnly' ? 'bg-emerald-950/90 text-emerald-300 border border-emerald-500/80 font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            🎯 Active Trade Zone (1)
+          </button>
+          <button
+            onClick={() => setFilterType('reference')}
+            className={`px-3 py-1.5 font-medium rounded transition-colors ${
+              filterType === 'reference' ? 'bg-purple-950/80 text-purple-300 border border-purple-800/80 font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            📐 Reference Context ({zones.filter(z => z.isReferenceZone || (activeTradeZoneId && z.id !== activeTradeZoneId)).length})
+          </button>
           <button
             onClick={() => setFilterType('recent')}
             className={`px-3 py-1.5 font-medium rounded transition-colors ${
               filterType === 'recent' ? 'bg-sky-950/90 text-sky-300 border border-sky-800/80 font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            ⚡ Recent Active (1 D / 1 S)
+            ⚡ Recent (1 D / 1 S)
           </button>
           <button
             onClick={() => setFilterType('all')}
@@ -67,7 +90,7 @@ export const ZoneRadar: React.FC<ZoneRadarProps> = ({
               filterType === 'demand' ? 'bg-emerald-950/80 text-emerald-300' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            Demand Only
+            Demand
           </button>
           <button
             onClick={() => setFilterType('supply')}
@@ -75,7 +98,7 @@ export const ZoneRadar: React.FC<ZoneRadarProps> = ({
               filterType === 'supply' ? 'bg-rose-950/80 text-rose-300' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            Supply Only
+            Supply
           </button>
           <button
             onClick={() => setFilterType('mitigated')}
@@ -83,7 +106,7 @@ export const ZoneRadar: React.FC<ZoneRadarProps> = ({
               filterType === 'mitigated' ? 'bg-slate-800 text-slate-300' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            Mitigated / Broken
+            Broken / Mitigated
           </button>
         </div>
       </div>
@@ -107,6 +130,7 @@ export const ZoneRadar: React.FC<ZoneRadarProps> = ({
             {filteredZones.map((zone) => {
               const isDemand = zone.type === 'demand';
               const isSelected = selectedZoneId === zone.id;
+              const isActiveTrade = zone.isActiveTradeZone || (activeTradeZoneId ? zone.id === activeTradeZoneId : false);
               const widthDollars = zone.high - zone.low;
               const widthPct = (widthDollars / zone.equilibrium) * 100;
 
@@ -115,7 +139,11 @@ export const ZoneRadar: React.FC<ZoneRadarProps> = ({
                   key={zone.id}
                   onClick={() => onSelectZone(zone)}
                   className={`hover:bg-slate-800/40 transition-colors cursor-pointer ${
-                    isSelected ? 'bg-slate-800/70 border-l-2 border-emerald-500' : ''
+                    isActiveTrade
+                      ? 'bg-emerald-950/20 border-l-4 border-emerald-400'
+                      : isSelected
+                      ? 'bg-slate-800/70 border-l-2 border-slate-500'
+                      : ''
                   }`}
                 >
                   {/* Pattern & Type */}
@@ -125,13 +153,22 @@ export const ZoneRadar: React.FC<ZoneRadarProps> = ({
                         {isDemand ? <ArrowUpRight className="w-4 h-4 inline" /> : <ArrowDownRight className="w-4 h-4 inline" />}
                       </span>
                       <div>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="font-semibold text-slate-200">
                             {isDemand ? 'Demand' : 'Supply'} · {zone.pattern}
                           </span>
-                          {zone.isRecentPrimary && (
-                            <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-sky-950/90 text-sky-300 border border-sky-700/80 uppercase tracking-wider animate-pulse">
-                              ★ Latest Active
+                          {isActiveTrade ? (
+                            <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 uppercase tracking-wider shadow-sm flex items-center gap-1">
+                              🎯 Active Trade Zone
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.2 text-[9px] font-mono rounded bg-slate-800 text-slate-400 border border-slate-700">
+                              📐 Reference Context
+                            </span>
+                          )}
+                          {zone.isRecentPrimary && !isActiveTrade && (
+                            <span className="px-1.5 py-0.2 text-[9px] font-semibold rounded bg-sky-950/90 text-sky-300 border border-sky-700/80 uppercase tracking-wider">
+                              Recent
                             </span>
                           )}
                         </div>
@@ -215,16 +252,36 @@ export const ZoneRadar: React.FC<ZoneRadarProps> = ({
 
                   {/* Action */}
                   <td className="py-3.5 px-4 text-right">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSelectZone(zone);
-                      }}
-                      className="px-2.5 py-1 text-[11px] font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded transition-colors inline-flex items-center gap-1"
-                    >
-                      <span>Focus</span>
-                      <ExternalLink className="w-3 h-3 text-slate-400" />
-                    </button>
+                    <div className="flex items-center justify-end gap-1.5">
+                      {isActiveTrade ? (
+                        <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                          ✓ Active Trade Zone
+                        </span>
+                      ) : onSetActiveTradeZone && !zone.isMitigated ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSetActiveTradeZone(zone.id);
+                          }}
+                          className="px-2 py-1 text-[10px] font-medium text-emerald-300 hover:text-white bg-emerald-950/80 hover:bg-emerald-800 border border-emerald-600/60 rounded transition-colors inline-flex items-center gap-1 shadow-sm cursor-pointer"
+                          title="Activate this zone as the ONE primary trade zone"
+                        >
+                          <span>⚡ Activate</span>
+                        </button>
+                      ) : null}
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectZone(zone);
+                        }}
+                        className="px-2 py-1 text-[11px] font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded transition-colors inline-flex items-center gap-1 cursor-pointer"
+                        title="Focus on chart"
+                      >
+                        <span>Focus</span>
+                        <ExternalLink className="w-3 h-3 text-slate-400" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );
