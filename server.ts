@@ -4,6 +4,7 @@ import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+import { isFuturesSymbol, getFuturesRoot } from './src/utils/contractSpecs';
 
 dotenv.config();
 
@@ -407,7 +408,7 @@ async function startServer() {
 
     const assetType = isOption 
       ? 'OPTION' 
-      : (String(symbol).startsWith('/') || String(symbol).includes('MES') ? 'FUTURE' : 'EQUITY');
+      : (isFuturesSymbol(String(symbol)) ? 'FUTURE' : 'EQUITY');
     const instrumentSymbol = isOption && occSymbol ? occSymbol : String(symbol).toUpperCase().trim();
 
     // Determine exit action based on entry action
@@ -899,12 +900,13 @@ async function startServer() {
     // 4. High-fidelity Option Contract & Deterministic Dynamic Generator
     // Always uses real-world base price and real CURRENT date/time
     let basePrice = isOptionContract ? 4.25 : 767.50;
-    if (cleanSym.includes('MES') || cleanSym.includes('ES')) basePrice = 7740.00;
-    else if (cleanSym.includes('NQ') || cleanSym.includes('MNQ')) basePrice = 29730.00;
-    else if (cleanSym.includes('YM') || cleanSym.includes('MYM')) basePrice = 46200.00;
-    else if (cleanSym.includes('RTY') || cleanSym.includes('M2K')) basePrice = 2480.00;
-    else if (cleanSym.includes('CL')) basePrice = 74.20;
-    else if (cleanSym.includes('GC')) basePrice = 2950.00;
+    const futuresRoot = getFuturesRoot(cleanSym);
+    if (futuresRoot === 'ES' || futuresRoot === 'MES') basePrice = 7740.00;
+    else if (futuresRoot === 'NQ' || futuresRoot === 'MNQ') basePrice = 29730.00;
+    else if (futuresRoot === 'YM' || futuresRoot === 'MYM') basePrice = 46200.00;
+    else if (futuresRoot === 'RTY' || futuresRoot === 'M2K') basePrice = 2480.00;
+    else if (futuresRoot === 'CL') basePrice = 74.20;
+    else if (futuresRoot === 'GC') basePrice = 2950.00;
     else if (cleanSym === 'QQQ') basePrice = 719.00;
     else if (cleanSym === 'NVDA') basePrice = 217.25;
     else if (cleanSym === 'AAPL') basePrice = 343.50;

@@ -1,7 +1,19 @@
 import { TradeRecommendation, VolatilityMetrics } from '../types/trading';
-import { getContractPointValue } from './contractSpecs';
+import {
+  getContractPointValue,
+  isFuturesSymbol,
+  isSp500Futures,
+  isNasdaqFutures,
+  getFuturesRoot,
+} from './contractSpecs';
 
-export { getContractPointValue };
+export {
+  getContractPointValue,
+  isFuturesSymbol,
+  isSp500Futures,
+  isNasdaqFutures,
+  getFuturesRoot,
+};
 
 export type ExpirationStyle = 'weekly' | 'swing' | 'monthly';
 export type StrikeBias = 'ITM' | 'ATM' | 'OTM';
@@ -117,16 +129,15 @@ export interface SchwabOptionContractRecommendation {
  * e.g. /MES, /ES: 5-point CME strikes; /MNQ, /NQ: 25-point CME strikes; SPY/QQQ: $1 strikes; NVDA: $2.5 strikes
  */
 export function getStrikeIncrement(price: number, ticker?: string): number {
-  const clean = (ticker || '').toUpperCase().replace('/', '');
-  if (clean === 'MES' || clean.startsWith('MES') || clean === 'ES' || clean.startsWith('ES')) {
-    return 5.0; // 5-point standard CME listed strike interval
+  if (ticker) {
+    const root = getFuturesRoot(ticker);
+    if (root === 'ES' || root === 'MES') return 5.0; // 5-point standard CME listed strike interval
+    if (root === 'NQ' || root === 'MNQ') return 25.0; // 25-point standard CME listed strike interval
+    if (root === 'RTY' || root === 'M2K') return 10.0;
+    if (root === 'CL') return 0.5;
+    if (root === 'GC') return 10.0;
+    if (root === 'YM' || root === 'MYM') return 25.0;
   }
-  if (clean === 'MNQ' || clean.startsWith('MNQ') || clean === 'NQ' || clean.startsWith('NQ')) {
-    return 25.0; // 25-point standard CME listed strike interval
-  }
-  if (clean === 'RTY' || clean.startsWith('RTY')) return 10.0;
-  if (clean === 'CL' || clean.startsWith('CL')) return 0.5;
-  if (clean === 'GC' || clean.startsWith('GC')) return 10.0;
   if (price > 400) return 1.0; // SPY, QQQ have $1 strikes
   if (price > 100) return 2.5;
   if (price > 50) return 1.0;
@@ -142,18 +153,18 @@ export function validateTosSymbol(symbol: string, strike?: number): { valid: boo
   if (!symbol || !symbol.trim()) {
     return { valid: false, reason: 'Symbol cannot be empty.' };
   }
-  const clean = symbol.trim().toUpperCase();
-  const isFutures = clean.startsWith('/') || clean.includes('MES') || clean.includes('ES') || clean.includes('NQ') || clean.includes('MNQ') || clean.includes('CL') || clean.includes('GC') || clean.includes('RTY');
+  const root = getFuturesRoot(symbol);
+  const isFutures = isFuturesSymbol(symbol);
 
   if (isFutures && strike !== undefined) {
     if (!Number.isFinite(strike) || strike <= 0) {
       return { valid: false, reason: `Invalid strike price: ${strike}` };
     }
-    if (clean.includes('MES') || clean.includes('ES')) {
+    if (root === 'ES' || root === 'MES') {
       if (strike % 5 !== 0 || !Number.isInteger(strike)) {
         return { valid: false, reason: `CME /MES & /ES strikes must snap to 5-point increments (e.g. 5800, 5805). Strike received: ${strike}` };
       }
-    } else if (clean.includes('MNQ') || clean.includes('NQ')) {
+    } else if (root === 'NQ' || root === 'MNQ') {
       if (strike % 25 !== 0 || !Number.isInteger(strike)) {
         return { valid: false, reason: `CME /MNQ & /NQ strikes must snap to 25-point increments. Strike received: ${strike}` };
       }
@@ -220,24 +231,25 @@ function getExpirationDetails(style: ExpirationStyle = 'swing'): {
  * or CME Futures Option Symbol for /MES (e.g. /MS261023C5800)
  */
 function formatOccSymbol(ticker: string, expIso: string, type: 'CALL' | 'PUT', strike: number): string {
-  const clean = ticker.trim().toUpperCase();
-  const isFutures = clean.startsWith('/') || clean.includes('MES') || clean.includes('ES') || clean.includes('NQ') || clean.includes('MNQ');
+  const root = getFuturesRoot(ticker);
+  const isFutures = isFuturesSymbol(ticker);
   const [yyyy, mm, dd] = expIso.split('-');
   const yy = yyyy.slice(-2);
   const typeLetter = type === 'CALL' ? 'C' : 'P';
 
   if (isFutures) {
     // CME Futures Options OCC format: e.g. /MS261023C7865 for /MES or /MS[EXP][C/P][STRIKE]
-    let root = '/MS';
-    if (clean.includes('MES')) root = '/MS';
-    else if (clean.includes('MNQ')) root = '/MQ';
-    else if (clean.includes('/ES') || clean === 'ES') root = '/ES';
-    else if (clean.includes('/NQ') || clean === 'NQ') root = '/NQ';
-    else if (clean.startsWith('/')) root = clean;
-    else root = `/${clean}`;
-    return `${root}${yy}${mm}${dd}${typeLetter}${Math.round(strike)}`;
+    let occRoot = '/MS';
+    if (root === 'MES') occRoot = '/MS';
+    else if (root === 'MNQ') occRoot = '/MQ';
+    else if (root === 'ES') occRoot = '/ES';
+    else if (root === 'NQ') occRoot = '/NQ';
+    else if (root) occRoot = `/${root}`;
+    else occRoot = ticker.startsWith('/') ? ticker.toUpperCase() : `/${ticker.toUpperCase()}`;
+    return `${occRoot}${yy}${mm}${dd}${typeLetter}${Math.round(strike)}`;
   }
 
+  const clean = ticker.trim().toUpperCase().replace('/', '');
   const cleanTicker = clean.padEnd(6, ' ').slice(0, 6);
   const strikeFormatted = String(Math.round(strike * 1000)).padStart(8, '0');
   return `${cleanTicker}${yy}${mm}${dd}${typeLetter}${strikeFormatted}`;
@@ -264,10 +276,8 @@ export function generateSchwabOptionPlay(
   const cleanTicker = rawTicker.replace(/^(SCHWAB:|EXCHANGE:)/, '').trim().toUpperCase();
   const underlying = rec.entry;
 
-  const isIndexFutures =
-    cleanTicker.includes('MES') || cleanTicker.includes('ES');
-  const isNqFamily =
-    cleanTicker.includes('NQ') || cleanTicker.includes('MNQ');
+  const isIndexFutures = isSp500Futures(cleanTicker);
+  const isNqFamily = isNasdaqFutures(cleanTicker);
 
   const isPolluted =
     (isIndexFutures && (rec.entry < 2000 || underlying < 2000)) ||
@@ -295,7 +305,7 @@ export function generateSchwabOptionPlay(
   const expDetails = getExpirationDetails(expirationStyle);
   const { expIso, expDisplay, tosStr, daysToExpiration } = expDetails;
 
-  const isFutures = cleanTicker.startsWith('/') || cleanTicker === 'MES' || cleanTicker.includes('MES') || cleanTicker.includes('MNQ') || cleanTicker.includes('ES') || cleanTicker.includes('NQ') || cleanTicker.includes('RTY') || cleanTicker.includes('CL') || cleanTicker.includes('GC');
+  const isFutures = isFuturesSymbol(cleanTicker);
   const instrumentType: InstrumentType = isFutures ? 'FUTURES_OPTION' : 'EQUITY_OPTION';
   const actualTicker = isFutures ? (cleanTicker.startsWith('/') ? cleanTicker : `/${cleanTicker}`) : cleanTicker;
   const pointMultiplier = getContractPointValue(actualTicker, true);
@@ -331,15 +341,16 @@ export function generateSchwabOptionPlay(
 
   // Snap strike to listed exchange increments before constructing order strings
   if (isFutures) {
-    if (actualTicker.includes('MES') || actualTicker.includes('ES')) {
+    const root = getFuturesRoot(actualTicker);
+    if (root === 'ES' || root === 'MES') {
       strike = Math.round(spotPrice / 5) * 5;
       if (strikeBias === 'ITM') strike = isCall ? strike - 5 : strike + 5;
       else if (strikeBias === 'OTM') strike = isCall ? strike + 5 : strike - 5;
-    } else if (actualTicker.includes('MNQ') || actualTicker.includes('NQ')) {
+    } else if (root === 'NQ' || root === 'MNQ') {
       strike = Math.round(spotPrice / 25) * 25;
       if (strikeBias === 'ITM') strike = isCall ? strike - 25 : strike + 25;
       else if (strikeBias === 'OTM') strike = isCall ? strike + 25 : strike - 25;
-    } else if (actualTicker.includes('RTY')) {
+    } else if (root === 'RTY' || root === 'M2K') {
       strike = Math.round(spotPrice / 10) * 10;
       if (strikeBias === 'ITM') strike = isCall ? strike - 10 : strike + 10;
       else if (strikeBias === 'OTM') strike = isCall ? strike + 10 : strike - 10;
@@ -353,11 +364,12 @@ export function generateSchwabOptionPlay(
   // Symbol and Strike Validation with snapping fallback
   let validation = validateTosSymbol(actualTicker, strike);
   if (!validation.valid) {
-    if (actualTicker.includes('MES') || actualTicker.includes('ES')) {
+    const root = getFuturesRoot(actualTicker);
+    if (root === 'ES' || root === 'MES') {
       strike = Math.round(strike / 5) * 5;
-    } else if (actualTicker.includes('MNQ') || actualTicker.includes('NQ')) {
+    } else if (root === 'NQ' || root === 'MNQ') {
       strike = Math.round(strike / 25) * 25;
-    } else if (actualTicker.includes('RTY')) {
+    } else if (root === 'RTY' || root === 'M2K') {
       strike = Math.round(strike / 10) * 10;
     } else {
       strike = Number((Math.round(strike / Math.max(increment, 0.5)) * Math.max(increment, 0.5)).toFixed(2));
@@ -636,7 +648,7 @@ export function formatTosNaturalOptionCommand(
 ): string {
   const signQty = qty >= 0 ? `+${qty}` : `${qty}`;
   const cleanTicker = ticker.trim().toUpperCase();
-  const isFutures = cleanTicker.startsWith('/') || cleanTicker.includes('MES') || cleanTicker.includes('ES') || cleanTicker.includes('NQ') || cleanTicker.includes('MNQ');
+  const isFutures = isFuturesSymbol(cleanTicker);
   const actualSym = isFutures ? (cleanTicker.startsWith('/') ? cleanTicker : `/${cleanTicker}`) : cleanTicker.replace('/', '');
   
   if (isFutures) {
@@ -662,7 +674,7 @@ export function formatTosNaturalOptionExitCommand(
 ): string {
   const signQty = qty > 0 ? `-${qty}` : `${qty}`;
   const cleanTicker = ticker.trim().toUpperCase();
-  const isFutures = cleanTicker.startsWith('/') || cleanTicker.includes('MES') || cleanTicker.includes('ES') || cleanTicker.includes('NQ') || cleanTicker.includes('MNQ');
+  const isFutures = isFuturesSymbol(cleanTicker);
   const actualSym = isFutures ? (cleanTicker.startsWith('/') ? cleanTicker : `/${cleanTicker}`) : cleanTicker.replace('/', '');
 
   if (isFutures) {
@@ -686,7 +698,7 @@ export function formatTosCompoundStockOrFuturesBracketCommand(
   targetPrice: number
 ): string {
   const cleanSym = symbol.trim().toUpperCase();
-  const isFutures = cleanSym.startsWith('/') || cleanSym.includes('MES') || cleanSym.includes('ES') || cleanSym.includes('NQ') || cleanSym.includes('MNQ');
+  const isFutures = isFuturesSymbol(cleanSym);
   const actualSym = isFutures ? (cleanSym.startsWith('/') ? cleanSym : `/${cleanSym}`) : cleanSym;
   const isLong = side === 'long';
   const entryAction = isLong ? 'BUY' : 'SELL';
@@ -711,7 +723,7 @@ export function formatTosCompoundOptionBracketCommand(
   qty: number = 1
 ): string {
   const cleanTicker = ticker.trim().toUpperCase();
-  const isFutures = cleanTicker.startsWith('/') || cleanTicker.includes('MES') || cleanTicker.includes('ES') || cleanTicker.includes('NQ') || cleanTicker.includes('MNQ');
+  const isFutures = isFuturesSymbol(cleanTicker);
   const actualSym = isFutures ? (cleanTicker.startsWith('/') ? cleanTicker : `/${cleanTicker}`) : cleanTicker.replace('/', '');
   const signQty = qty >= 0 ? `+${qty}` : `${qty}`;
   const exitSignQty = qty > 0 ? `-${qty}` : `${qty}`;
@@ -719,9 +731,9 @@ export function formatTosCompoundOptionBracketCommand(
   // Validate and sanitize strike to prevent non-tradable fractional numbers
   const valResult = validateTosSymbol(actualSym, strike);
   let tradableStrike = strike;
-  if (!valResult.valid && (actualSym.includes('MES') || actualSym.includes('ES'))) {
+  if (!valResult.valid && isSp500Futures(actualSym)) {
     tradableStrike = Math.round(strike / 5) * 5;
-  } else if (!valResult.valid && (actualSym.includes('MNQ') || actualSym.includes('NQ'))) {
+  } else if (!valResult.valid && isNasdaqFutures(actualSym)) {
     tradableStrike = Math.round(strike / 25) * 25;
   }
 
@@ -748,7 +760,7 @@ export function formatTosStockOrFuturesCommand(
   entryPrice: number
 ): string {
   const cleanSym = symbol.trim().toUpperCase();
-  const isFutures = cleanSym.startsWith('/') || cleanSym.includes('MES') || cleanSym.includes('ES');
+  const isFutures = isFuturesSymbol(cleanSym);
   const actualSym = isFutures && !cleanSym.startsWith('/') ? `/${cleanSym}` : cleanSym;
   const action = side === 'long' ? 'BUY' : 'SELL';
   const signQty = side === 'long' ? `+${qty}` : `-${qty}`;
@@ -768,7 +780,7 @@ export function formatSchwabStockSummary(
   rrRatio: number
 ): string {
   const cleanSym = symbol.trim().toUpperCase();
-  const isFutures = cleanSym.startsWith('/') || cleanSym.includes('MES') || cleanSym.includes('ES') || cleanSym.includes('NQ') || cleanSym.includes('MNQ');
+  const isFutures = isFuturesSymbol(cleanSym);
   const actualSym = isFutures ? (cleanSym.startsWith('/') ? cleanSym : `/${cleanSym}`) : cleanSym;
   const action = side === 'long' ? 'BUY (Long)' : 'SELL SHORT (Bearish)';
   const pointMultiplier = getContractPointValue(actualSym);

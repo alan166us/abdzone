@@ -10,7 +10,7 @@ import {
   ExpirationStyle, 
   StrikeBias 
 } from '../utils/optionsEngine';
-import { getContractPointValue } from '../utils/contractSpecs';
+import { getContractPointValue, isFuturesSymbol, isSp500Futures } from '../utils/contractSpecs';
 import { 
   Building2, 
   Crosshair, 
@@ -65,10 +65,10 @@ export const SchwabOptionsTrader: React.FC<SchwabOptionsTraderProps> = ({
   const [futuresTradeMode, setFuturesTradeMode] = useState<'options' | 'outright'>('options');
 
   const cleanSym = (symbol || '').replace(/^(SCHWAB:|EXCHANGE:)/, '').trim().toUpperCase();
-  const isFutures = cleanSym.startsWith('/') || cleanSym === 'MES' || cleanSym.includes('MES') || cleanSym.includes('MNQ') || cleanSym.includes('ES') || cleanSym.includes('NQ') || cleanSym.includes('RTY') || cleanSym.includes('CL') || cleanSym.includes('GC');
+  const isFutures = isFuturesSymbol(cleanSym);
   const actualTicker = isFutures ? (cleanSym.startsWith('/') ? cleanSym : `/${cleanSym}`) : cleanSym;
 
-  const isIndexFutures = cleanSym.includes('MES') || cleanSym.includes('ES');
+  const isIndexFutures = isSp500Futures(cleanSym);
   const isSelectedRecStale = selectedRecommendation && (
     (selectedRecommendation.symbol && selectedRecommendation.symbol.toUpperCase().replace(/^(SCHWAB:|EXCHANGE:|\/)/, '') !== cleanSym.replace('/', '')) ||
     (isIndexFutures && selectedRecommendation.entry < 2000)

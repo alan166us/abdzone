@@ -9,7 +9,7 @@ import {
   formatTosCompoundOptionBracketCommand,
   formatTosCompoundStockOrFuturesBracketCommand
 } from '../utils/optionsEngine';
-import { getContractPointValue, getContractSpecs } from '../utils/contractSpecs';
+import { getContractPointValue, getContractSpecs, isFuturesSymbol, isSp500Futures } from '../utils/contractSpecs';
 import { calculateSessionVwap } from '../utils/vwapEngine';
 import { 
   ArrowUpRight, 
@@ -683,8 +683,8 @@ export const TradeRecommendationPanel: React.FC<TradeRecommendationPanelProps> =
         const optionMetrics = computeOptionMetrics(optionPlay, params);
 
         const cleanSym = (ticker || '').toUpperCase();
-        const isMesContract = cleanSym.includes('MES');
-        const isFuturesContract = isMesContract || cleanSym.startsWith('/') || cleanSym.includes('ES') || cleanSym.includes('NQ');
+        const isFuturesContract = isFuturesSymbol(cleanSym);
+        const isMesContract = isSp500Futures(cleanSym);
 
         // Dynamic Orders matching user's custom calculator sizing and price targets
         const dynamicContractQty = optionMetrics.contracts;

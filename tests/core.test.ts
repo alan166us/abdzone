@@ -9,6 +9,7 @@ import { getFuturesRoot, isFuturesSymbol, isSp500Futures, getContractPointValue 
 import { calculatePositionSize, generateTradeRecommendations, runHistoricalZoneBacktest } from '../src/utils/tradeEngine';
 import { detectSupplyDemandZones } from '../src/utils/zoneDetector';
 import { calculateHistoricalVolatility, getLatestVolatilityMetrics } from '../src/utils/volatility';
+import { getStrikeIncrement, validateTosSymbol, formatTosNaturalOptionCommand } from '../src/utils/optionsEngine';
 
 // ---------- deterministic synthetic data ----------
 function makeRng(seed: number) {
@@ -136,4 +137,30 @@ test('backtest: unresolved trades are reported as open, not dropped; stats use c
   const closed = r.totalTrades - r.openTrades;
   assert.ok(r.openTrades >= 0);
   assert.equal(r.wins + r.losses <= closed, true);
+});
+
+// ---------- options engine & symbol formatting ----------
+test('options: equities with futures roots in their names do not snap to CME strike intervals', () => {
+  assert.equal(getStrikeIncrement(75, 'ESTC'), 1.0);
+  assert.equal(getStrikeIncrement(30, 'CLF'), 0.5);
+  assert.equal(getStrikeIncrement(25, 'IREN'), 0.5);
+  assert.equal(getStrikeIncrement(5800, '/MES'), 5.0);
+  assert.equal(getStrikeIncrement(20000, '/MNQ'), 25.0);
+});
+
+test('options: symbol validation accepts equity strikes but enforces 5-point CME intervals on /MES', () => {
+  assert.equal(validateTosSymbol('ESTC', 72.5).valid, true);
+  assert.equal(validateTosSymbol('CLF', 32.5).valid, true);
+  assert.equal(validateTosSymbol('/MES', 5800).valid, true);
+  assert.equal(validateTosSymbol('/MES', 5802).valid, false);
+});
+
+test('options: natural orders format with SINGLE ... 100 for equities and clean CME format for futures', () => {
+  const equityOrder = formatTosNaturalOptionCommand('ESTC', '23 OCT 26', 75, 'CALL', 3.5);
+  assert.ok(equityOrder.includes('SINGLE ESTC 100 23 OCT 26 75 CALL @3.50 LMT'));
+
+  const futuresOrder = formatTosNaturalOptionCommand('/MES', '23 OCT 26', 5800, 'CALL', 42.5);
+  assert.ok(futuresOrder.includes('/MES 23 OCT 26 5800 CALL @42.50 LMT'));
+  assert.ok(!futuresOrder.includes('SINGLE'));
+  assert.ok(!futuresOrder.includes('100'));
 });

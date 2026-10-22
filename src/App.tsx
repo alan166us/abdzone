@@ -22,6 +22,7 @@ import { detectSupplyDemandZones } from './utils/zoneDetector';
 import { getLatestVolatilityMetrics } from './utils/volatility';
 import { generateTradeRecommendations } from './utils/tradeEngine';
 import { generateSchwabOptionPlay } from './utils/optionsEngine';
+import { getFuturesRoot, isSp500Futures } from './utils/contractSpecs';
 import { getSampleJournalTrades } from './utils/journalSeed';
 import { ArrowUpRight, ArrowDownRight, SlidersHorizontal, CheckCircle } from 'lucide-react';
 
@@ -212,13 +213,14 @@ export default function App() {
     // Fallback ONLY if initial manual load fails (never overwrite real charts on background polls)
     if (!isBackgroundPoll) {
       const anchor = getLivePriceAnchor(cleanSym);
+      const root = getFuturesRoot(cleanSym);
       let startPrice = anchor ?? 585.00;
-      if (cleanSym.includes('MES') || cleanSym.includes('ES')) startPrice = anchor ?? 5865.00;
-      else if (cleanSym.includes('NQ') || cleanSym.includes('MNQ')) startPrice = anchor ?? 20450.00;
-      else if (cleanSym.includes('YM') || cleanSym.includes('MYM')) startPrice = anchor ?? 46200;
-      else if (cleanSym.includes('RTY') || cleanSym.includes('M2K')) startPrice = anchor ?? 2480;
-      else if (cleanSym.includes('CL')) startPrice = anchor ?? 74.20;
-      else if (cleanSym.includes('GC')) startPrice = anchor ?? 2950;
+      if (root === 'ES' || root === 'MES') startPrice = anchor ?? 5865.00;
+      else if (root === 'NQ' || root === 'MNQ') startPrice = anchor ?? 20450.00;
+      else if (root === 'YM' || root === 'MYM') startPrice = anchor ?? 46200;
+      else if (root === 'RTY' || root === 'M2K') startPrice = anchor ?? 2480;
+      else if (root === 'CL') startPrice = anchor ?? 74.20;
+      else if (root === 'GC') startPrice = anchor ?? 2950;
       else if (cleanSym === 'QQQ') startPrice = anchor ?? 495.00;
       else if (cleanSym === 'NVDA') startPrice = anchor ?? 184;
       else if (cleanSym === 'AAPL') startPrice = anchor ?? 258;
@@ -288,13 +290,14 @@ export default function App() {
     setCandles([]);
 
     const anchor = getLivePriceAnchor(cleanSym);
+    const root = getFuturesRoot(cleanSym);
     let startPrice = anchor ?? 585.00;
-    if (cleanSym.includes('MES') || cleanSym.includes('ES')) startPrice = anchor ?? 5865.00;
-    else if (cleanSym.includes('NQ') || cleanSym.includes('MNQ')) startPrice = anchor ?? 20450.00;
-    else if (cleanSym.includes('YM') || cleanSym.includes('MYM')) startPrice = anchor ?? 46200;
-    else if (cleanSym.includes('RTY') || cleanSym.includes('M2K')) startPrice = anchor ?? 2480;
-    else if (cleanSym.includes('CL')) startPrice = anchor ?? 74.20;
-    else if (cleanSym.includes('GC')) startPrice = anchor ?? 2950;
+    if (root === 'ES' || root === 'MES') startPrice = anchor ?? 5865.00;
+    else if (root === 'NQ' || root === 'MNQ') startPrice = anchor ?? 20450.00;
+    else if (root === 'YM' || root === 'MYM') startPrice = anchor ?? 46200;
+    else if (root === 'RTY' || root === 'M2K') startPrice = anchor ?? 2480;
+    else if (root === 'CL') startPrice = anchor ?? 74.20;
+    else if (root === 'GC') startPrice = anchor ?? 2950;
     else if (cleanSym === 'QQQ') startPrice = anchor ?? 495.00;
     else if (cleanSym === 'NVDA') startPrice = anchor ?? 184;
     else if (cleanSym === 'AAPL') startPrice = anchor ?? 258;
@@ -351,7 +354,7 @@ export default function App() {
   // 3. Generate Precision Entry & Exit Recommendations
   const currentPrice = candles[candles.length - 1]?.close || 1;
   const recommendations = useMemo(() => {
-    const isIndexFutures = selectedAsset.includes('MES') || selectedAsset.includes('ES');
+    const isIndexFutures = isSp500Futures(selectedAsset);
     // Ensure recommendations are fully recalculated against fresh candles of the newly selected asset
     // and prevent stale SPY price coordinates from leaking into index futures
     if (isIndexFutures && currentPrice < 2000) {
@@ -432,7 +435,7 @@ export default function App() {
   // Default select first recommendation if none selected or if selected recommendation is stale
   useEffect(() => {
     if (recommendations.length > 0) {
-      const isIndexFutures = selectedAsset.includes('MES') || selectedAsset.includes('ES');
+      const isIndexFutures = isSp500Futures(selectedAsset);
       const isStale = selectedRecommendation && (
         selectedRecommendation.symbol !== selectedAsset ||
         (isIndexFutures && selectedRecommendation.entry < 2000)

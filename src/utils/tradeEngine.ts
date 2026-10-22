@@ -1,9 +1,9 @@
 import { Candle, SupplyDemandZone, TradeRecommendation, VolatilityMetrics, BacktestSummary, BacktestTrade, BacktestConfig, EquityPoint } from '../types/trading';
-import { getContractPointValue } from './contractSpecs';
+import { getContractPointValue, isFuturesSymbol, isSp500Futures, getFuturesRoot } from './contractSpecs';
 import { detectSupplyDemandZones } from './zoneDetector';
 import { calculateSessionVwap } from './vwapEngine';
 
-export { getContractPointValue };
+export { getContractPointValue, isFuturesSymbol, isSp500Futures, getFuturesRoot };
 
 export function calculateHeuristicQualityScore(
   zone: SupplyDemandZone,
@@ -46,7 +46,7 @@ export function generateTradeRecommendations(
   const bufferAmount = atr * bufferMultiplier;
 
   const is1mOr5m = frequency <= 5;
-  const isIndexFutures = symbol.includes('MES') || symbol.includes('ES');
+  const isIndexFutures = isSp500Futures(symbol);
 
   const activeDemandZones = zones
     .filter(z => {
@@ -112,7 +112,7 @@ export function generateTradeRecommendations(
     let proximityPhase: import('../types/trading').ProximityPhase = zone.proximityPhase || 'Dormant (>1.5x ATR)';
     if (touchesProximal) proximityPhase = 'Phase B: Zone Touch (Execute)';
     else if (distanceInAtr <= 1.5) proximityPhase = 'Phase A: Staging (1.0\u20131.5x ATR)';
-    else proximityPhase = 'Phase A: Staging (1.0\u20131.5x ATR)';
+    else proximityPhase = 'Dormant (>1.5x ATR)';
     const baseTags = zone.confluenceTags && zone.confluenceTags.length > 0 ? zone.confluenceTags.join(' \u00b7 ') : 'Standard Imbalance';
     const tags = isRejectionMode ? `${baseTags} \u00b7 Execution Mode: Rejection Confirmation` : baseTags;
     recommendations.push({
@@ -171,7 +171,7 @@ export function generateTradeRecommendations(
     let proximityPhase: import('../types/trading').ProximityPhase = zone.proximityPhase || 'Dormant (>1.5x ATR)';
     if (touchesProximal) proximityPhase = 'Phase B: Zone Touch (Execute)';
     else if (distanceInAtr <= 1.5) proximityPhase = 'Phase A: Staging (1.0–1.5x ATR)';
-    else proximityPhase = 'Phase A: Staging (1.0–1.5x ATR)';
+    else proximityPhase = 'Dormant (>1.5x ATR)';
     const isFlippedSupply = Boolean(zone.confluenceTags?.some(t => t.includes('Flipped Supply')));
     const isPullbackBelowVwap = Boolean(candles && candles.length >= 3 && distanceInAtr <= 2.5);
 
@@ -483,7 +483,7 @@ export function runHistoricalZoneBacktest(
     if (currentBar.time < startTime) continue;
     if (currentBar.time > endTime) break;
 
-    const historicalSlice = candles.slice(0, j + 1);
+    const historicalSlice = candles.slice(0, j);
     const walkForwardZones = detectSupplyDemandZones(historicalSlice, {
       recentOnly: false,
       includeMitigated: false,
@@ -525,6 +525,7 @@ export function runHistoricalZoneBacktest(
       const entryTime = currentBar.time;
       const entryDateStr = currentBar.dateStr;
 
+      let resolved = false;
       for (let k = j + 1; k < candles.length; k++) {
         const c = candles[k];
         if (c.time > endTime) break;
@@ -532,6 +533,7 @@ export function runHistoricalZoneBacktest(
 
         if (isLong) {
           if (c.low <= stopLoss) {
+            resolved = true;
             const lossDollar = -riskBudget;
             currentBalance += lossDollar;
             const pnlPercent = -((entryPrice - stopLoss) / entryPrice) * 100;
@@ -568,6 +570,7 @@ export function runHistoricalZoneBacktest(
             equityCurve.push({ time: c.time, dateStr: c.dateStr, equity: currentBalance, drawdownPercent: ddPct, tradeIndex: trades.length, outcome: 'loss' });
             break;
           } else if (c.high >= tpPrice) {
+            resolved = true;
             const gainDollar = riskBudget * targetRMultiple;
             currentBalance += gainDollar;
             const pnlPercent = ((tpPrice - entryPrice) / entryPrice) * 100;
@@ -603,6 +606,7 @@ export function runHistoricalZoneBacktest(
           }
         } else {
           if (c.high >= stopLoss) {
+            resolved = true;
             const lossDollar = -riskBudget;
             currentBalance += lossDollar;
             const pnlPercent = -((stopLoss - entryPrice) / entryPrice) * 100;
@@ -639,6 +643,7 @@ export function runHistoricalZoneBacktest(
             equityCurve.push({ time: c.time, dateStr: c.dateStr, equity: currentBalance, drawdownPercent: ddPct, tradeIndex: trades.length, outcome: 'loss' });
             break;
           } else if (c.low <= tpPrice) {
+            resolved = true;
             const gainDollar = riskBudget * targetRMultiple;
             currentBalance += gainDollar;
             const pnlPercent = ((entryPrice - tpPrice) / entryPrice) * 100;
@@ -674,38 +679,76 @@ export function runHistoricalZoneBacktest(
           }
         }
       }
+
+      if (!resolved) {
+        const lastCandle = candles[candles.length - 1];
+        const markPrice = lastCandle ? lastCandle.close : entryPrice;
+        const unrealizedPnlDollar = isLong
+          ? (markPrice - entryPrice) * (riskBudget / riskPerUnit)
+          : (entryPrice - markPrice) * (riskBudget / riskPerUnit);
+        const unrealizedPnlPercent = isLong
+          ? ((markPrice - entryPrice) / entryPrice) * 100
+          : ((entryPrice - markPrice) / entryPrice) * 100;
+        trades.push({
+          id: `trade-${zone.id}-${trades.length + 1}`,
+          zoneId: zone.id,
+          zoneType: zone.type,
+          pattern: zone.pattern,
+          entryIndex,
+          entryTime,
+          entryDateStr,
+          entryPrice,
+          exitIndex: candles.length - 1,
+          exitTime: lastCandle?.time || entryTime,
+          exitDateStr: lastCandle?.dateStr || entryDateStr,
+          exitPrice: markPrice,
+          stopLossPrice: stopLoss,
+          takeProfitPrice: tpPrice,
+          bufferAmount: buffer,
+          side: isLong ? 'long' : 'short',
+          outcome: 'open',
+          rMultiple: 0,
+          pnlPercent: unrealizedPnlPercent,
+          pnlDollar: unrealizedPnlDollar,
+          balanceAfter: currentBalance,
+          barsHeld: candles.length - 1 - entryIndex,
+          qualityScore: zone.heuristicQualityScore ?? zone.strengthScore,
+        });
+      }
     }
   }
 
-  const wins = trades.filter(t => t.rMultiple > 0).length;
-  const losses = trades.filter(t => t.rMultiple < 0).length;
-  const winRate = trades.length > 0 ? (wins / trades.length) * 100 : 0;
-  const totalWinDollars = trades.filter(t => t.pnlDollar > 0).reduce((acc, t) => acc + t.pnlDollar, 0);
-  const totalLossDollars = Math.abs(trades.filter(t => t.pnlDollar < 0).reduce((acc, t) => acc + t.pnlDollar, 0));
+  const closedTrades = trades.filter(t => t.outcome !== 'open');
+  const wins = closedTrades.filter(t => t.rMultiple > 0).length;
+  const losses = closedTrades.filter(t => t.rMultiple < 0).length;
+  const openTrades = trades.length - closedTrades.length;
+  const winRate = closedTrades.length > 0 ? (wins / closedTrades.length) * 100 : 0;
+  const totalWinDollars = closedTrades.filter(t => t.pnlDollar > 0).reduce((acc, t) => acc + t.pnlDollar, 0);
+  const totalLossDollars = Math.abs(closedTrades.filter(t => t.pnlDollar < 0).reduce((acc, t) => acc + t.pnlDollar, 0));
   const profitFactor = totalLossDollars > 0 ? totalWinDollars / totalLossDollars : (totalWinDollars > 0 ? 9.99 : 0);
   const avgWinDollar = wins > 0 ? totalWinDollars / wins : 0;
   const avgLossDollar = losses > 0 ? totalLossDollars / losses : 0;
-  const avgRMultiple = trades.length > 0 ? trades.reduce((acc, t) => acc + t.rMultiple, 0) / trades.length : 0;
+  const avgRMultiple = closedTrades.length > 0 ? closedTrades.reduce((acc, t) => acc + t.rMultiple, 0) / closedTrades.length : 0;
   const netProfitDollar = currentBalance - config.initialBalance;
   const netProfitPercent = ((currentBalance - config.initialBalance) / config.initialBalance) * 100;
 
   let currentWinStreak = 0, maxWinStreak = 0, currentLossStreak = 0, maxLossStreak = 0;
-  for (const t of trades) {
+  for (const t of closedTrades) {
     if (t.rMultiple > 0) {
       currentWinStreak++;
       currentLossStreak = 0;
       if (currentWinStreak > maxWinStreak) maxWinStreak = currentWinStreak;
-    } else {
+    } else if (t.rMultiple < 0) {
       currentLossStreak++;
       currentWinStreak = 0;
       if (currentLossStreak > maxLossStreak) maxLossStreak = currentLossStreak;
     }
   }
 
-  const longTrades = trades.filter(t => t.side === 'long');
+  const longTrades = closedTrades.filter(t => t.side === 'long');
   const longWins = longTrades.filter(t => t.rMultiple > 0).length;
   const longWinRate = longTrades.length > 0 ? (longWins / longTrades.length) * 100 : 0;
-  const shortTrades = trades.filter(t => t.side === 'short');
+  const shortTrades = closedTrades.filter(t => t.side === 'short');
   const shortWins = shortTrades.filter(t => t.rMultiple > 0).length;
   const shortWinRate = shortTrades.length > 0 ? (shortWins / shortTrades.length) * 100 : 0;
 
@@ -723,7 +766,7 @@ export function runHistoricalZoneBacktest(
     totalTrades: trades.length,
     wins,
     losses,
-    openTrades: 0,
+    openTrades,
     winRate,
     profitFactor,
     avgRMultiple,
@@ -739,19 +782,6 @@ export function runHistoricalZoneBacktest(
     trades: trades.sort((a, b) => b.entryTime - a.entryTime),
     equityCurve,
   };
-}
-
-export function isFuturesSymbol(symbol: string): boolean {
-  if (!symbol) return false;
-  const clean = symbol.trim().toUpperCase().replace('/', '');
-  return symbol.trim().startsWith('/') ||
-    clean === 'MES' || clean.startsWith('MES') ||
-    clean === 'MNQ' || clean.startsWith('MNQ') ||
-    clean === 'ES' || clean.startsWith('ES') ||
-    clean === 'NQ' || clean.startsWith('NQ') ||
-    clean === 'RTY' || clean.startsWith('RTY') ||
-    clean === 'CL' || clean.startsWith('CL') ||
-    clean === 'GC' || clean.startsWith('GC');
 }
 
 export function calculatePositionSize(
@@ -772,6 +802,7 @@ export function calculatePositionSize(
   commission: number;
   isFutures: boolean;
   isMes: boolean;
+  exceedsRiskBudget: boolean;
 } {
   const riskBudget = equity * (riskPercent / 100);
   const riskPerUnit = Math.abs(entry - stopLoss);
@@ -783,7 +814,8 @@ export function calculatePositionSize(
   const riskAmount = isFutures ? (units * riskPerContract) : (units * riskPerUnit);
   const notional = isFutures ? (units * entry * pointValue) : (units * entry);
   const commission = isFutures ? 2.5 : 0;
-  const isMes = symbol.toUpperCase().includes('MES');
+  const isMes = isSp500Futures(symbol);
+  const exceedsRiskBudget = riskAmount > riskBudget;
   return {
     units,
     contracts,
@@ -796,5 +828,6 @@ export function calculatePositionSize(
     commission,
     isFutures,
     isMes,
+    exceedsRiskBudget,
   };
 }

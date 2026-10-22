@@ -77,8 +77,29 @@ export function calculateHistoricalVolatility(candles: Candle[], period: number 
     logReturns.push(prev > 0 ? Math.log(curr / prev) : 0);
   }
 
+  // Determine bar spacing in minutes to annualize appropriately (US RTH = 390m, Crypto = 1440m)
+  let barsPerDay = 1;
+  if (n >= 2) {
+    const deltas: number[] = [];
+    const checkCount = Math.min(n - 1, 10);
+    for (let i = 0; i < checkCount; i++) {
+      const diff = Math.abs(candles[i + 1].time - candles[i].time);
+      if (diff > 0) deltas.push(diff);
+    }
+    if (deltas.length > 0) {
+      deltas.sort((a, b) => a - b);
+      const medianDeltaMs = deltas[Math.floor(deltas.length / 2)];
+      const medianMinutes = medianDeltaMs / 60000;
+      if (medianMinutes > 0 && medianMinutes < 1080) {
+        const tradingMinutesPerDay = isCrypto ? 1440 : 390;
+        barsPerDay = tradingMinutesPerDay / medianMinutes;
+      }
+    }
+  }
+
   const hv: number[] = new Array(n).fill(0);
-  const annualFactor = Math.sqrt(isCrypto ? 365 : 252);
+  const tradingDays = isCrypto ? 365 : 252;
+  const annualFactor = Math.sqrt(tradingDays * barsPerDay);
 
   for (let i = 0; i < n; i++) {
     if (i < period) {
@@ -166,15 +187,16 @@ export function getLatestVolatilityMetrics(candles: Candle[], isCrypto: boolean 
   let regime: VolatilityMetrics['regime'] = 'Normal';
   let recommendedBufferMultiplier = 1.35;
 
-  if (currentBbWidth < avgWidth * 0.7) {
+  // Check Extreme Impulse first so very high HV (> 0.95) is not swallowed by Expansion (> 0.65)
+  if (currentHV > 0.95 || atrPercent > 6.0) {
+    regime = 'Extreme Impulse';
+    recommendedBufferMultiplier = 1.85;
+  } else if (currentBbWidth < avgWidth * 0.7) {
     regime = 'Compression (Squeeze)';
     recommendedBufferMultiplier = 1.25; // Tight base, breakout pending
   } else if (currentBbWidth > avgWidth * 1.5 || currentHV > 0.65) {
     regime = 'Expansion (High Volatility)';
     recommendedBufferMultiplier = 1.6; // High volatility: needs wider buffer against stop runs
-  } else if (currentHV > 0.95 || atrPercent > 6.0) {
-    regime = 'Extreme Impulse';
-    recommendedBufferMultiplier = 1.85;
   }
 
   return {
